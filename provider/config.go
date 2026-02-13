@@ -1,0 +1,69 @@
+package provider
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"net/http"
+
+	"github.com/jaydoubleu/pulumi-vyos/provider/vyosclient"
+	"github.com/pulumi/pulumi-go-provider/infer"
+)
+
+// Config defines the provider configuration for connecting to a VyOS instance.
+type Config struct {
+	Host     string  `pulumi:"host"`
+	APIKey   string  `pulumi:"apiKey" provider:"secret"`
+	Port     *int    `pulumi:"port,optional"`
+	Protocol *string `pulumi:"protocol,optional"`
+	Insecure *bool   `pulumi:"insecure,optional"`
+
+	client vyosclient.API
+}
+
+// Annotate provides schema metadata for the provider configuration.
+func (c *Config) Annotate(a infer.Annotator) {
+	a.Describe(&c.Host, "The VyOS host address (IP or hostname).")
+	a.Describe(&c.APIKey, "The VyOS HTTP API key.")
+	a.Describe(&c.Port, "The API port. Defaults to 443.")
+	a.Describe(&c.Protocol, "The protocol to use (https or http). Defaults to https.")
+	a.Describe(&c.Insecure, "Skip TLS certificate verification. Defaults to false.")
+	a.SetDefault(&c.Port, 443)
+	a.SetDefault(&c.Protocol, "https")
+	a.SetDefault(&c.Insecure, false)
+}
+
+// Configure initializes the VyOS API client from provider configuration.
+func (c *Config) Configure(_ context.Context) error {
+	protocol := "https"
+	if c.Protocol != nil {
+		protocol = *c.Protocol
+	}
+	port := 443
+	if c.Port != nil {
+		port = *c.Port
+	}
+	insecure := false
+	if c.Insecure != nil {
+		insecure = *c.Insecure
+	}
+
+	baseURL := fmt.Sprintf("%s://%s:%d", protocol, c.Host, port)
+
+	httpClient := &http.Client{}
+	if insecure {
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, //nolint:gosec // User-requested TLS skip for self-signed certs.
+			},
+		}
+	}
+
+	c.client = vyosclient.New(baseURL, c.APIKey, vyosclient.WithHTTPClient(httpClient))
+	return nil
+}
+
+// Client returns the configured VyOS API client.
+func (c Config) Client() vyosclient.API {
+	return c.client
+}

@@ -1,0 +1,19 @@
+name: vyos-yaml-example
+runtime: yaml
+description: VyOS provider example using Pulumi YAML
+config:
+  vyos:host:
+    type: string
+  vyos:apiKey:
+    type: string
+    secret: true
+  vyos:insecure:
+    type: boolean
+    default: true
+resources:
+  hostname:
+    type: vyos:index:SystemHostname
+    properties:
+      hostname: my-vyos-router
+outputs:
+  hostnameValue: ${hostname.hostname}

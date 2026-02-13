@@ -1,0 +1,32 @@
+# Build output
+bin/
+dist/
+
+# SDK output (generated)
+sdk/
+
+# Go
+vendor/
+
+# Test VM artifacts
+test/vm/*.iso
+test/vm/*.qcow2
+test/vm/seed.iso
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+
+# Pulumi state (local testing)
+examples/*/.pulumi/
+examples/*/Pulumi.*.yaml
+!examples/*/Pulumi.yaml
+
+# Schema (generated)
+provider/cmd/pulumi-resource-vyos/schema.json
+schema.json

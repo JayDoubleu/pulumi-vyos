@@ -1,0 +1,10 @@
+#cloud-config
+vyos_config_commands:
+  - set system host-name 'vyos-test'
+  - set system login user vyos authentication plaintext-password 'vyos'
+  - set interfaces ethernet eth0 address 'dhcp'
+  - set service ssh port '22'
+  - set service https api keys id pulumi-test key 'integration-test-key'
+  - set service https api rest
+  - set service https listen-address '0.0.0.0'
+  - set service https allow-client address '0.0.0.0/0'
