@@ -161,16 +161,18 @@ func buildTagNodeResource(tn *xmlparse.TagNode, parentPath []string, parentIsCon
 	}
 
 	res := Resource{
-		GoName:      goName,
-		Description: helpText,
-		Kind:        TagNodeResource,
-		FileName:    fileName,
-		TagFields:   []TagField{tagField},
+		GoName:            goName,
+		Description:       helpText,
+		Kind:              TagNodeResource,
+		FileName:          fileName,
+		TagFields:         []TagField{tagField},
+		namingPath:        append([]string{}, resourcePath...),
+		namingIsContainer: append([]bool{}, resourceIsContainer...),
 	}
 
 	var subResources []Resource
 	if tn.Children != nil {
-		res.Fields, subResources = collectFields(tn.Children, resourcePath, resourceIsContainer, nil)
+		res.Fields, subResources = collectFields(tn.Children, resourcePath, resourceIsContainer, nil, resourcePath)
 	}
 
 	result := []Resource{res}
@@ -232,11 +234,16 @@ func buildLeafNodeResource(ln *xmlparse.LeafNode, parentPath []string, parentIsC
 // collectFields gathers fields from a tagNode's children. Plain nodes are
 // flattened (their children become fields with prefixed names). Nested
 // tagNodes become separate sub-resources.
+//
+// apiPath is the full VyOS path to the owning tag resource (including any
+// intermediate plain nodes consumed by ancestor resources). It is passed to
+// nested tag resources so they can build correct VyOS API paths.
 func collectFields(
 	children *xmlparse.Children,
 	resourcePath []string,
 	resourceIsContainer []bool,
 	prefix []string,
+	apiPath []string,
 ) ([]Field, []Resource) {
 	var fields []Field
 	var subResources []Resource
@@ -259,7 +266,7 @@ func collectFields(
 		n := &children.Nodes[i]
 		if n.Children != nil {
 			newPrefix := append(append([]string{}, prefix...), n.Name)
-			childFields, childResources := collectFields(n.Children, resourcePath, resourceIsContainer, newPrefix)
+			childFields, childResources := collectFields(n.Children, resourcePath, resourceIsContainer, newPrefix, apiPath)
 			for _, f := range childFields {
 				addField(f)
 			}
@@ -270,7 +277,7 @@ func collectFields(
 	for i := range children.TagNodes {
 		tn := &children.TagNodes[i]
 		subResources = append(subResources,
-			buildNestedTagNodeResource(tn, resourcePath, resourceIsContainer)...)
+			buildNestedTagNodeResource(tn, resourcePath, resourceIsContainer, apiPath, prefix)...)
 	}
 
 	return fields, subResources
@@ -278,10 +285,18 @@ func collectFields(
 
 // buildNestedTagNodeResource creates a sub-resource from a tagNode nested
 // within another tagNode (e.g., firewall > zone > from).
+//
+// parentApiPath is the full VyOS path to the parent tag resource (including
+// intermediate plain nodes from ancestor resources). intermediatePrefix holds
+// the plain node names between the parent tag and this nested tag; these are
+// included in the second TagField's PathPrefix so the generated VyOS API
+// calls use the correct path.
 func buildNestedTagNodeResource(
 	tn *xmlparse.TagNode,
 	parentResourcePath []string,
 	parentIsContainer []bool,
+	parentApiPath []string,
+	intermediatePrefix []string,
 ) []Resource {
 	resourcePath := append(append([]string{}, parentResourcePath...), tn.Name)
 	resourceIsContainer := append(append([]bool{}, parentIsContainer...), false)
@@ -300,6 +315,11 @@ func buildNestedTagNodeResource(
 	parentTagGoName := KebabToPascal(parentResourcePath[len(parentResourcePath)-1]) + "Name"
 	parentTagPulumiName := PascalToCamel(parentTagGoName)
 
+	// Second TagField PathPrefix: intermediate plain nodes + this tag name.
+	secondPrefix := make([]string, 0, len(intermediatePrefix)+1)
+	secondPrefix = append(secondPrefix, intermediatePrefix...)
+	secondPrefix = append(secondPrefix, tn.Name)
+
 	res := Resource{
 		GoName:      goName,
 		Description: helpText,
@@ -310,20 +330,29 @@ func buildNestedTagNodeResource(
 				GoName:      parentTagGoName,
 				PulumiName:  parentTagPulumiName,
 				Description: "Parent tag node key",
-				PathPrefix:  append([]string{}, parentResourcePath...),
+				PathPrefix:  append([]string{}, parentApiPath...),
 			},
 			{
 				GoName:      "Name",
 				PulumiName:  "name",
 				Description: helpText,
-				PathPrefix:  []string{tn.Name},
+				PathPrefix:  secondPrefix,
 			},
 		},
+		intermediatePath:  append([]string{}, intermediatePrefix...),
+		namingPath:        append([]string{}, resourcePath...),
+		namingIsContainer: append([]bool{}, resourceIsContainer...),
 	}
+
+	// Full API path for this resource: parent API path + intermediates + tag name.
+	subApiPath := make([]string, 0, len(parentApiPath)+len(intermediatePrefix)+1)
+	subApiPath = append(subApiPath, parentApiPath...)
+	subApiPath = append(subApiPath, intermediatePrefix...)
+	subApiPath = append(subApiPath, tn.Name)
 
 	var subResources []Resource
 	if tn.Children != nil {
-		res.Fields, subResources = collectFields(tn.Children, resourcePath, resourceIsContainer, nil)
+		res.Fields, subResources = collectFields(tn.Children, resourcePath, resourceIsContainer, nil, subApiPath)
 	}
 
 	result := []Resource{res}

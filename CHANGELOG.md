@@ -6,9 +6,8 @@ Initial alpha release.
 
 ### Features
 
-- **612 resources** generated from VyOS XML interface definitions, covering the
-  full configuration surface (interfaces, firewall, NAT, routing, system,
-  services, VPN, and more)
+- **600 resources** generated from VyOS XML interface definitions (interfaces,
+  firewall, NAT, routing, system, services, VPN, and more)
 - **3 SDK languages**: Python, TypeScript, Go
 - **Code generation pipeline** from VyOS XML (`vyos/vyos-1x`) to typed Pulumi
   resources with full CRUD support

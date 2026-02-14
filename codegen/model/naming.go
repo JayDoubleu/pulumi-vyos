@@ -200,6 +200,200 @@ func FixReservedFieldName(goName, pulumiName string) (string, string) {
 	return goName, pulumiName
 }
 
+// Deduplicate resolves duplicate GoName collisions in a resource list.
+// Two types of duplicates are handled:
+//  1. Same API path (duplicate XML definitions): keep the resource with the
+//     most fields, drop the rest.
+//  2. Different API paths (lost intermediate segments): disambiguate by
+//     inserting intermediate path segments into GoName and FileName.
+func Deduplicate(resources []Resource) []Resource {
+	// Group resources by GoName, preserving first-seen order.
+	type group struct {
+		indices []int
+	}
+	groups := make(map[string]*group)
+	var order []string
+
+	for i, r := range resources {
+		g, ok := groups[r.GoName]
+		if !ok {
+			g = &group{}
+			groups[r.GoName] = g
+			order = append(order, r.GoName)
+		}
+		g.indices = append(g.indices, i)
+	}
+
+	result := make([]Resource, 0, len(resources))
+
+	for _, name := range order {
+		g := groups[name]
+		if len(g.indices) == 1 {
+			result = append(result, resources[g.indices[0]])
+			continue
+		}
+
+		// Check if all resources in the group have the same API path.
+		allSamePath := true
+		refPath := strings.Join(resources[g.indices[0]].BasePath(), "/")
+		for _, idx := range g.indices[1:] {
+			if strings.Join(resources[idx].BasePath(), "/") != refPath {
+				allSamePath = false
+				break
+			}
+		}
+
+		if allSamePath {
+			// Duplicate XML definitions: keep the one with the most fields.
+			bestIdx := g.indices[0]
+			for _, idx := range g.indices[1:] {
+				if len(resources[idx].Fields) > len(resources[bestIdx].Fields) {
+					bestIdx = idx
+				}
+			}
+			result = append(result, resources[bestIdx])
+			continue
+		}
+
+		// Different API paths: disambiguate by adding intermediate segments.
+		result = append(result, disambiguateGroup(resources, g.indices)...)
+	}
+
+	return result
+}
+
+// disambiguateGroup renames resources in a collision group by inserting
+// trailing intermediate path segments until all GoNames are unique.
+func disambiguateGroup(resources []Resource, indices []int) []Resource {
+	// Compute effective intermediates for each resource in the group.
+	// This captures both the resource's own intermediates and any inherited
+	// from ancestor resources.
+	infos := make([]interInfo, len(indices))
+	maxLen := 0
+
+	for i, idx := range indices {
+		segs, insertIdx := effectiveIntermediates(resources[idx])
+		infos[i] = interInfo{segs, insertIdx}
+		if len(segs) > maxLen {
+			maxLen = len(segs)
+		}
+	}
+
+	// Try adding N trailing intermediate segments until all names are unique.
+	for n := 1; n <= maxLen; n++ {
+		names := make(map[string]bool)
+		unique := true
+
+		for i, idx := range indices {
+			np, nc := disambiguatedNamingPath(resources[idx], infos[i].segments, infos[i].insertIdx, n)
+			name := BuildGoResourceName(np, nc)
+			if names[name] {
+				unique = false
+				break
+			}
+			names[name] = true
+		}
+
+		if unique {
+			return applyDisambiguation(resources, indices, infos, n)
+		}
+	}
+
+	// Fallback: use all intermediate segments.
+	return applyDisambiguation(resources, indices, infos, maxLen)
+}
+
+// interInfo holds computed intermediate information for disambiguation.
+type interInfo struct {
+	segments  []string
+	insertIdx int
+}
+
+// applyDisambiguation rebuilds GoName and FileName for each resource in the
+// group using n trailing intermediate segments.
+func applyDisambiguation(resources []Resource, indices []int, infos []interInfo, n int) []Resource {
+	out := make([]Resource, len(indices))
+	for i, idx := range indices {
+		r := resources[idx]
+		np, nc := disambiguatedNamingPath(r, infos[i].segments, infos[i].insertIdx, n)
+		r.GoName = BuildGoResourceName(np, nc)
+		r.FileName = BuildFileName(np, nc)
+		r.namingPath = np
+		r.namingIsContainer = nc
+		out[i] = r
+	}
+	return out
+}
+
+// effectiveIntermediates computes the intermediate plain node segments for a
+// resource by comparing its API path (BasePath) with its naming path. This
+// captures both the resource's own intermediates and intermediates inherited
+// from ancestor resources. Also returns the insertion index in the naming
+// path where disambiguation segments should be inserted.
+func effectiveIntermediates(r Resource) ([]string, int) {
+	bp := r.BasePath()
+	np := r.namingPath
+	if len(bp) == 0 || len(np) == 0 {
+		return nil, 0
+	}
+
+	var allInter []string
+	insertIdx := len(np) - 1 // default: before last segment
+	foundFirst := false
+	bpIdx := 0
+
+	for npIdx := 0; npIdx < len(np) && bpIdx < len(bp); npIdx++ {
+		for bpIdx < len(bp) && bp[bpIdx] != np[npIdx] {
+			allInter = append(allInter, bp[bpIdx])
+			if !foundFirst {
+				insertIdx = npIdx
+				foundFirst = true
+			}
+			bpIdx++
+		}
+		if bpIdx < len(bp) {
+			bpIdx++
+		}
+	}
+
+	return allInter, insertIdx
+}
+
+// disambiguatedNamingPath inserts n trailing segments from the given
+// intermediates into the naming path at insertIdx. Returns the expanded
+// path and isContainer slices.
+func disambiguatedNamingPath(r Resource, inter []string, insertIdx int, n int) ([]string, []bool) {
+	np := r.namingPath
+	nc := r.namingIsContainer
+
+	if len(inter) == 0 || len(np) == 0 {
+		return np, nc
+	}
+
+	start := len(inter) - n
+	if start < 0 {
+		start = 0
+	}
+	segments := inter[start:]
+
+	newPath := make([]string, 0, len(np)+len(segments))
+	newIsContainer := make([]bool, 0, len(np)+len(segments))
+
+	newPath = append(newPath, np[:insertIdx]...)
+	newIsContainer = append(newIsContainer, nc[:insertIdx]...)
+
+	// Disambiguation segments are plain nodes, treat as containers.
+	for _, seg := range segments {
+		newPath = append(newPath, seg)
+		newIsContainer = append(newIsContainer, true)
+	}
+
+	newPath = append(newPath, np[insertIdx:]...)
+	newIsContainer = append(newIsContainer, nc[insertIdx:]...)
+
+	return newPath, newIsContainer
+}
+
 func titleCase(s string) string {
 	if len(s) == 0 {
 		return ""

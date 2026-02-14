@@ -28,6 +28,7 @@ make test         # Run all unit tests
 make lint         # Run golangci-lint
 make generate     # Regenerate resource files from VyOS XML
 make provider     # Build provider binary only
+make clean        # Remove generated files and build artifacts
 ```
 
 ## Generated Code

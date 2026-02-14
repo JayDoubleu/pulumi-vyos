@@ -18,6 +18,11 @@ type Resource struct {
 	// LeafPath is the complete static VyOS config path for a LeafNodeResource
 	// (e.g., ["system", "host-name"]). Empty for TagNodeResource.
 	LeafPath []string
+
+	// Unexported fields for deduplication (set by builder, used by Deduplicate).
+	intermediatePath  []string // plain nodes between parent tag and this tag
+	namingPath        []string // path segments used for GoName
+	namingIsContainer []bool   // isContainer flags for naming path
 }
 
 // ResourceKind distinguishes tag-node resources from leaf-node resources.

@@ -48,13 +48,18 @@ func main() {
 		allResources = append(allResources, resources...)
 	}
 
+	// Deduplicate resources: merge true duplicates (same API path) and
+	// disambiguate naming collisions (different API paths, same GoName).
+	beforeDedup := len(allResources)
+	allResources = model.Deduplicate(allResources)
+
 	// Sort resources by name for stable output.
 	sort.Slice(allResources, func(i, j int) bool {
 		return allResources[i].GoName < allResources[j].GoName
 	})
 
-	log.Printf("Parsed %d XML files (%d skipped), producing %d resources",
-		len(files)-parseErrors, parseErrors, len(allResources))
+	log.Printf("Parsed %d XML files (%d skipped), %d resources before dedup, %d after",
+		len(files)-parseErrors, parseErrors, beforeDedup, len(allResources))
 
 	if err := generate.Generate(allResources, *outputDir); err != nil {
 		log.Fatalf("generate: %v", err)

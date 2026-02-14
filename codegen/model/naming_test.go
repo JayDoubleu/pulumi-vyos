@@ -1,6 +1,8 @@
 package model
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestKebabToPascal(t *testing.T) {
 	t.Parallel()
@@ -222,5 +224,169 @@ func TestBuildFileName(t *testing.T) {
 					tt.segments, tt.isContainer, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDeduplicate_NoDuplicates(t *testing.T) {
+	t.Parallel()
+
+	resources := []Resource{
+		{GoName: "InterfaceEthernet", FileName: "resource_gen_interface_ethernet.go"},
+		{GoName: "SystemHostName", FileName: "resource_gen_system_host_name.go"},
+	}
+
+	got := Deduplicate(resources)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 resources, got %d", len(got))
+	}
+	if got[0].GoName != "InterfaceEthernet" || got[1].GoName != "SystemHostName" {
+		t.Errorf("unexpected resources: %v, %v", got[0].GoName, got[1].GoName)
+	}
+}
+
+func TestDeduplicate_SamePath(t *testing.T) {
+	t.Parallel()
+
+	// Two resources with the same GoName and same API path (duplicate XML).
+	// Keep the one with more fields.
+	resources := []Resource{
+		{
+			GoName:   "FirewallZone",
+			FileName: "resource_gen_firewall_zone.go",
+			Kind:     TagNodeResource,
+			TagFields: []TagField{
+				{PathPrefix: []string{"firewall", "zone"}},
+			},
+			Fields: []Field{{GoName: "Description"}},
+		},
+		{
+			GoName:   "FirewallZone",
+			FileName: "resource_gen_firewall_zone.go",
+			Kind:     TagNodeResource,
+			TagFields: []TagField{
+				{PathPrefix: []string{"firewall", "zone"}},
+			},
+			Fields: []Field{{GoName: "Description"}, {GoName: "DefaultAction"}},
+		},
+	}
+
+	got := Deduplicate(resources)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(got))
+	}
+	if len(got[0].Fields) != 2 {
+		t.Errorf("expected resource with 2 fields, got %d", len(got[0].Fields))
+	}
+}
+
+func TestDeduplicate_DifferentIntermediates(t *testing.T) {
+	t.Parallel()
+
+	// Two resources with the same GoName but different API paths due to
+	// different intermediate plain nodes. Should be disambiguated.
+	resources := []Resource{
+		{
+			GoName:   "VRFNameAggregateAddress",
+			FileName: "resource_gen_vrf_name_aggregate_address.go",
+			Kind:     TagNodeResource,
+			TagFields: []TagField{
+				{PathPrefix: []string{"vrf", "name"}},
+				{PathPrefix: []string{"protocols", "bgp", "address-family", "ipv4-unicast", "aggregate-address"}},
+			},
+			intermediatePath:  []string{"protocols", "bgp", "address-family", "ipv4-unicast"},
+			namingPath:        []string{"vrf", "name", "aggregate-address"},
+			namingIsContainer: []bool{true, false, false},
+		},
+		{
+			GoName:   "VRFNameAggregateAddress",
+			FileName: "resource_gen_vrf_name_aggregate_address.go",
+			Kind:     TagNodeResource,
+			TagFields: []TagField{
+				{PathPrefix: []string{"vrf", "name"}},
+				{PathPrefix: []string{"protocols", "bgp", "address-family", "ipv6-unicast", "aggregate-address"}},
+			},
+			intermediatePath:  []string{"protocols", "bgp", "address-family", "ipv6-unicast"},
+			namingPath:        []string{"vrf", "name", "aggregate-address"},
+			namingIsContainer: []bool{true, false, false},
+		},
+	}
+
+	got := Deduplicate(resources)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 resources, got %d", len(got))
+	}
+
+	names := map[string]bool{}
+	for _, r := range got {
+		names[r.GoName] = true
+	}
+
+	// Adding 1 trailing intermediate: "ipv4-unicast" vs "ipv6-unicast" should suffice.
+	if !names["VRFNameIPv4UnicastAggregateAddress"] {
+		t.Errorf("missing VRFNameIPv4UnicastAggregateAddress, got %v", got[0].GoName)
+	}
+	if !names["VRFNameIPv6UnicastAggregateAddress"] {
+		t.Errorf("missing VRFNameIPv6UnicastAggregateAddress, got %v", got[1].GoName)
+	}
+
+	// FileNames should also be updated.
+	for _, r := range got {
+		if r.GoName == "VRFNameIPv4UnicastAggregateAddress" {
+			want := "resource_gen_vrf_name_ipv4_unicast_aggregate_address.go"
+			if r.FileName != want {
+				t.Errorf("FileName = %q, want %q", r.FileName, want)
+			}
+		}
+	}
+}
+
+func TestDeduplicate_NeedsMultipleSegments(t *testing.T) {
+	t.Parallel()
+
+	// Two resources where the last intermediate segment is the same,
+	// requiring 2 trailing segments for disambiguation.
+	resources := []Resource{
+		{
+			GoName:   "VRFNameNetwork",
+			FileName: "resource_gen_vrf_name_network.go",
+			Kind:     TagNodeResource,
+			TagFields: []TagField{
+				{PathPrefix: []string{"vrf", "name"}},
+				{PathPrefix: []string{"protocols", "bgp", "ipv4-unicast", "network"}},
+			},
+			intermediatePath:  []string{"protocols", "bgp", "ipv4-unicast"},
+			namingPath:        []string{"vrf", "name", "network"},
+			namingIsContainer: []bool{true, false, false},
+		},
+		{
+			GoName:   "VRFNameNetwork",
+			FileName: "resource_gen_vrf_name_network.go",
+			Kind:     TagNodeResource,
+			TagFields: []TagField{
+				{PathPrefix: []string{"vrf", "name"}},
+				{PathPrefix: []string{"protocols", "ospf", "ipv4-unicast", "network"}},
+			},
+			intermediatePath:  []string{"protocols", "ospf", "ipv4-unicast"},
+			namingPath:        []string{"vrf", "name", "network"},
+			namingIsContainer: []bool{true, false, false},
+		},
+	}
+
+	got := Deduplicate(resources)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 resources, got %d", len(got))
+	}
+
+	names := map[string]bool{}
+	for _, r := range got {
+		names[r.GoName] = true
+	}
+
+	// 1 segment ("ipv4-unicast") is the same for both, so need 2 segments.
+	if !names["VRFNameBGPIPv4UnicastNetwork"] {
+		t.Errorf("missing VRFNameBGPIPv4UnicastNetwork in %v", names)
+	}
+	if !names["VRFNameOSPFIPv4UnicastNetwork"] {
+		t.Errorf("missing VRFNameOSPFIPv4UnicastNetwork in %v", names)
 	}
 }

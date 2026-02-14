@@ -4,6 +4,9 @@ Native Pulumi provider for VyOS network appliances, built with the Pulumi Go Pro
 
 ## Research Summary (February 2026)
 
+External ecosystem notes in this section are a point-in-time snapshot from
+February 2026. Re-verify them before treating them as current project guidance.
+
 ### VyOS API Landscape
 
 #### HTTP/REST API
@@ -48,8 +51,7 @@ Schema is statically generated during package build.
 
 #### NETCONF
 
-**Not supported.** There is a dev tracker item (T68) for future support but
-nothing exists today. Ansible's `vyos.vyos` collection works entirely over SSH.
+NETCONF is not used by this provider. This project targets VyOS's HTTP API.
 
 ### CRUD Mapping to VyOS API
 
@@ -134,16 +136,13 @@ not behave idempotently.
 
 ### Critical Constraint: Concurrency
 
-**VyOS's HTTP API cannot handle concurrent requests safely.**
+VyOS's HTTP API cannot handle concurrent requests safely. The API server
+(FastAPI + Uvicorn) uses a global session lock with single-threaded config
+handling. Concurrent requests cause 504 Gateway Timeouts, segfaults, and
+config corruption.
 
-- Global session lock with single-threaded config handling (FastAPI + Uvicorn)
-- Concurrent requests cause 504 Gateway Timeouts, segfaults, config corruption
-- All existing Terraform providers suffer from this
-- Users must use `terraform apply -parallelism=1`
-
-**Mitigation for this provider:** Implement a provider-side mutex so only one
-HTTP request hits VyOS at a time, regardless of Pulumi's parallelism setting.
-This is invisible to users and the cleanest solution.
+This provider enforces one in-flight API request at a time via a client-side
+mutex, regardless of Pulumi's parallelism setting.
 
 ### VyOS Configuration Model
 
@@ -178,7 +177,7 @@ save
 
 ### VyOS XML Interface Definitions (Schema Source)
 
-The `vyos/vyos-1x` repo contains **125 XML definition files** in
+The `vyos/vyos-1x` repo contains **124 XML definition files** in
 `interface-definitions/*.xml.in` that fully describe every configuration node.
 
 These are the authoritative schema for code generation.
@@ -277,15 +276,14 @@ for what users expect.
 
 #### Terraform Providers
 
-| Provider                            | Status                | Approach                          |
-|-------------------------------------|-----------------------|-----------------------------------|
-| `Foltik/vyos` (v0.3.4, May 2025)   | Active, limited       | Generic `vyos_config` resources   |
-| `thomasfinstad/vyos-rolling`        | **Archived** Mar 2025 | Auto-generated from VyOS XML      |
-| `TGNThump/vyos`                     | Dormant since 2023    | Basic                             |
+| Provider                     | Approach                        |
+|------------------------------|---------------------------------|
+| `Foltik/vyos`                | Generic `vyos_config` resources |
+| `thomasfinstad/vyos-rolling` | Auto-generated from VyOS XML    |
+| `TGNThump/vyos`              | Basic resources                 |
 
-The thomasfinstad provider is the most relevant -- it proved XML-based code
-generation works and produced comprehensive resource coverage. The code
-generation pipeline (Go) can be adapted for Pulumi.
+The thomasfinstad provider was used as a reference for XML-based code
+generation and resource modeling in this project.
 
 #### Python: pyvyos
 
@@ -300,7 +298,7 @@ reference for API behavior.
 Using `github.com/pulumi/pulumi-go-provider` with the `infer` package.
 
 Why native over Terraform bridge:
-- No dependency on a Terraform provider (the good ones are archived/dormant)
+- No dependency on external Terraform provider lifecycle
 - Clean modeling of VyOS's commit semantics
 - Provider-side mutex for concurrency (bridge can't do this)
 - First-class Pulumi experience
@@ -322,16 +320,17 @@ Only `Create` is required. Optional methods with sensible defaults:
 #### Provider Config
 
 ```go
-type ProviderConfig struct {
-    Host     string `pulumi:"host"`
-    APIKey   string `pulumi:"apiKey" provider:"secret"`
-    Port     *int   `pulumi:"port,optional"`
-    Protocol *string `pulumi:"protocol,optional"`
-    Insecure *bool  `pulumi:"insecure,optional"`
+type Config struct {
+    Host       string  `pulumi:"host"`
+    APIKey     string  `pulumi:"apiKey" provider:"secret"`
+    Port       *int    `pulumi:"port,optional"`
+    Protocol   *string `pulumi:"protocol,optional"`
+    Insecure   *bool   `pulumi:"insecure,optional"`
+    SaveConfig *bool   `pulumi:"saveConfig,optional"`
 }
 ```
 
-Accessed in resource methods via `infer.GetConfig[ProviderConfig](ctx)`.
+Accessed in resource methods via `infer.GetConfig[Config](ctx)`.
 
 #### Resource Example
 
@@ -354,21 +353,20 @@ type InterfaceEthernetState struct {
 
 func (*InterfaceEthernet) Create(ctx context.Context, req infer.CreateRequest[InterfaceEthernetArgs]) (
     infer.CreateResponse[InterfaceEthernetState], error) {
-    config := infer.GetConfig[ProviderConfig](ctx)
-    client := vyos.NewClient(config.Host, config.APIKey, *config.Port)
+    client := getClient(ctx)
 
-    ops := []vyos.Operation{
-        {Op: "set", Path: []string{"interfaces", "ethernet", req.Inputs.Name, "address"}, Value: req.Inputs.Address[0]},
+    ops := []vyosclient.Operation{
+        {Op: "set", Path: []any{"interfaces", "ethernet", req.Inputs.Name, "address"}, Value: req.Inputs.Address[0]},
     }
     if req.Inputs.Description != nil {
-        ops = append(ops, vyos.Operation{
-            Op: "set", Path: []string{"interfaces", "ethernet", req.Inputs.Name, "description"},
+        ops = append(ops, vyosclient.Operation{
+            Op: "set", Path: []any{"interfaces", "ethernet", req.Inputs.Name, "description"},
             Value: *req.Inputs.Description,
         })
     }
     // ... more fields
 
-    if err := client.ConfigureBatch(ops); err != nil {
+    if err := client.BatchConfigure(ctx, ops); err != nil {
         return infer.CreateResponse[InterfaceEthernetState]{}, err
     }
 
@@ -376,7 +374,6 @@ func (*InterfaceEthernet) Create(ctx context.Context, req infer.CreateRequest[In
         ID: req.Inputs.Name,
         Output: InterfaceEthernetState{
             InterfaceEthernetArgs: req.Inputs,
-            MAC:                   "read-from-device",
         },
     }, nil
 }
@@ -405,35 +402,34 @@ Component resources can later compose these into higher-level abstractions
 
 ### Phase 1: Foundation (1-2 weeks)
 
-- [ ] Scaffold provider with `pulumi-provider-boilerplate`
-- [ ] Implement `ProviderConfig` (host, API key, port, TLS)
-- [ ] Build VyOS HTTP API client in Go
+- [x] Scaffold provider with `pulumi-provider-boilerplate`
+- [x] Implement `Config` (host, API key, port, TLS, saveConfig)
+- [x] Build VyOS HTTP API client in Go
   - Thin wrapper around `/configure`, `/retrieve`, `/config-file`
   - Mutex for request serialization (concurrency safety)
-  - Retry logic with backoff
   - Batch operation support
-- [ ] Hand-craft one resource: `vyos.InterfaceEthernet` with full CRUD
-- [ ] Set up testing against a real VyOS instance (VM or container)
-- [ ] Basic CI (build, lint, unit tests)
+- [x] Hand-craft one resource: `vyos.InterfaceEthernet` with full CRUD
+- [x] Set up testing against a real VyOS instance (VM or container)
+- [x] Basic CI (build, lint, unit tests)
 
 ### Phase 2: Code Generator (2-3 weeks)
 
-- [ ] Port/adapt XML parsing from `thomasfinstad/terraform-provider-vyos-rolling`
+- [x] Port/adapt XML parsing from `thomasfinstad/terraform-provider-vyos-rolling`
   - XML unmarshaling to Go structs
   - Include file preprocessing
   - Type inference (valueless->bool, u32->number, multi->list, etc.)
-- [ ] Build Go templates that emit Pulumi resource code
+- [x] Build Go templates that emit Pulumi resource code
   - Struct definitions with `pulumi:` tags
   - CRUD method implementations
   - Annotate methods (descriptions, defaults)
-- [ ] Generate resources for core config areas:
+- [x] Generate resources for core config areas:
   - Interfaces (ethernet, bonding, bridge, vxlan, wireguard, etc.)
   - Firewall (rules, groups, zones)
   - NAT (source, destination rules)
   - Routing (static, BGP, OSPF)
   - System (DNS, NTP, syslog, users)
   - Services (DHCP, SSH, HTTPS)
-- [ ] Validate generated code compiles and passes basic tests
+- [x] Validate generated code compiles and passes basic tests
 
 ### Phase 3: Polish (1-2 weeks)
 
@@ -446,7 +442,7 @@ Component resources can later compose these into higher-level abstractions
 
 ### Phase 4: Full Coverage and Release (ongoing)
 
-- [x] Generate all 125 XML definitions (123 parsed, 612 resources, 1 skipped)
+- [x] Generate all 124 XML definitions (123 parsed, 600 unique resources after dedup, 1 skipped)
 - [x] Component resources for common patterns (StaticRouteComplete, FirewallIPv4Ruleset)
 - [ ] Publish to Pulumi Registry
 - [x] CI pipeline for regeneration when VyOS updates XML definitions
@@ -457,8 +453,8 @@ Component resources can later compose these into higher-level abstractions
 ### Repositories
 
 - VyOS core: `github.com/vyos/vyos-1x` (XML definitions, Python config system)
-- Archived TF provider: `github.com/thomasfinstad/terraform-provider-vyos-rolling` (code gen reference)
-- Active TF provider: `github.com/foltik/terraform-provider-vyos` (API client reference)
+- TF provider (XML codegen reference): `github.com/thomasfinstad/terraform-provider-vyos-rolling`
+- TF provider (API client reference): `github.com/foltik/terraform-provider-vyos`
 - pyvyos: `github.com/vyos-contrib/pyvyos` (Python API client reference)
 - Pulumi Go Provider SDK: `github.com/pulumi/pulumi-go-provider`
 - Pulumi provider boilerplate: `github.com/pulumi/pulumi-provider-boilerplate`

@@ -8,8 +8,9 @@
 A native Pulumi provider for managing VyOS network appliance configuration.
 
 Unlike Terraform bridge providers, pulumi-vyos talks directly to the VyOS HTTP
-API. Resources are code-generated from the VyOS XML interface definitions,
-covering the full configuration surface with over 612 resource types.
+API. Resources are code-generated from the VyOS XML interface definitions.
+With the current `codegen/vyos-1x` submodule snapshot, `make generate` emits
+600 resource types after deduplication.
 
 ## Installation
 
@@ -110,9 +111,11 @@ See [`examples/`](examples/) for runnable examples in Python, TypeScript, Go, an
 
 ## Available Resources
 
-The provider generates over 612 resources from VyOS XML interface definitions,
-covering interfaces, firewall, NAT, routing protocols, system settings, services,
-VPN, and more. Every resource supports full CRUD operations and state refresh.
+The provider currently generates 600 resources from VyOS XML interface
+definitions (123 XML files parsed, 1 skipped in the current snapshot). This
+covers interfaces, firewall, NAT, routing protocols, system settings, services,
+VPN, and more. Every generated resource implements Create, Read, Update, and
+Delete methods.
 
 Resource names follow the VyOS config hierarchy. For example:
 - `vyos.InterfaceEthernet` for `interfaces ethernet <name>`
@@ -123,7 +126,7 @@ Resource names follow the VyOS config hierarchy. For example:
 
 ### What works
 
-- Full CRUD for all 612 generated resources
+- Full CRUD for all 600 generated resources
 - Client-side validation (regex and numeric range constraints)
 - Component resources: `StaticRouteComplete`, `FirewallIPv4Ruleset`
 - Config file save (automatic and explicit)
@@ -132,9 +135,9 @@ Resource names follow the VyOS config hierarchy. For example:
 ### Known limitations
 
 - Named validators (ipv4-address, mac-address, etc.) are not yet implemented
-- No `pulumi import` support yet
+- Import workflows are not yet documented or covered by integration tests
 - VyOS API requires serial access (provider uses a mutex)
-- Only tested against VyOS 1.4 (sagitta) rolling builds
+- Only tested against VyOS rolling builds
 
 ## Development
 
@@ -144,6 +147,7 @@ See [DESIGN.md](DESIGN.md) for architecture decisions and the development plan.
 make build    # generate + compile + schema + SDKs
 make test     # run unit tests
 make lint     # run golangci-lint
+make clean    # remove generated files and build artifacts
 ```
 
 ## License

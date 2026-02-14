@@ -426,6 +426,143 @@ func TestBuild_NestedTagNodes(t *testing.T) {
 	}
 }
 
+func TestBuild_NestedTagNodeWithIntermediates(t *testing.T) {
+	t.Parallel()
+
+	// vrf > name(tag) > protocols > bgp > address-family > ipv4-unicast > aggregate-address(tag)
+	// The intermediate plain nodes (protocols, bgp, address-family, ipv4-unicast) must
+	// appear in the nested resource's second TagField PathPrefix.
+	def := &xmlparse.InterfaceDefinition{
+		Nodes: []xmlparse.Node{
+			{
+				Name: "vrf",
+				Children: &xmlparse.Children{
+					TagNodes: []xmlparse.TagNode{
+						{
+							Name: "name",
+							Properties: &xmlparse.Properties{
+								Help: "VRF instance",
+							},
+							Children: &xmlparse.Children{
+								Nodes: []xmlparse.Node{
+									{
+										Name: "protocols",
+										Children: &xmlparse.Children{
+											Nodes: []xmlparse.Node{
+												{
+													Name: "bgp",
+													Children: &xmlparse.Children{
+														Nodes: []xmlparse.Node{
+															{
+																Name: "address-family",
+																Children: &xmlparse.Children{
+																	Nodes: []xmlparse.Node{
+																		{
+																			Name: "ipv4-unicast",
+																			Children: &xmlparse.Children{
+																				TagNodes: []xmlparse.TagNode{
+																					{
+																						Name: "aggregate-address",
+																						Properties: &xmlparse.Properties{
+																							Help: "BGP aggregate address",
+																						},
+																						Children: &xmlparse.Children{
+																							LeafNodes: []xmlparse.LeafNode{
+																								{
+																									Name: "as-set",
+																									Properties: &xmlparse.Properties{
+																										Help:      "Generate AS-set path information",
+																										Valueless: &struct{}{},
+																									},
+																								},
+																							},
+																						},
+																					},
+																				},
+																			},
+																		},
+																	},
+																},
+															},
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resources := Build(def)
+	names := resourceNames(resources)
+
+	// Expected: VRFName, VRFNameAggregateAddress
+	if len(resources) != 2 {
+		t.Fatalf("expected 2 resources, got %d: %v", len(resources), names)
+	}
+
+	rMap := make(map[string]*Resource)
+	for i := range resources {
+		rMap[resources[i].GoName] = &resources[i]
+	}
+
+	if _, ok := rMap["VRFName"]; !ok {
+		t.Errorf("missing VRFName in %v", names)
+	}
+
+	aa := rMap["VRFNameAggregateAddress"]
+	if aa == nil {
+		t.Fatalf("missing VRFNameAggregateAddress in %v", names)
+	}
+
+	if len(aa.TagFields) != 2 {
+		t.Fatalf("expected 2 TagFields, got %d", len(aa.TagFields))
+	}
+
+	// First TagField (parent): path should be ["vrf", "name"]
+	firstPrefix := aa.TagFields[0].PathPrefix
+	wantFirstPrefix := []string{"vrf", "name"}
+	if !slicesEqual(firstPrefix, wantFirstPrefix) {
+		t.Errorf("first TagField PathPrefix = %v, want %v", firstPrefix, wantFirstPrefix)
+	}
+
+	// Second TagField: path should include intermediates
+	secondPrefix := aa.TagFields[1].PathPrefix
+	wantSecondPrefix := []string{"protocols", "bgp", "address-family", "ipv4-unicast", "aggregate-address"}
+	if !slicesEqual(secondPrefix, wantSecondPrefix) {
+		t.Errorf("second TagField PathPrefix = %v, want %v", secondPrefix, wantSecondPrefix)
+	}
+
+	// Verify BasePath includes all intermediate segments.
+	wantBasePath := []string{"vrf", "name", "protocols", "bgp", "address-family", "ipv4-unicast", "aggregate-address"}
+	if !slicesEqual(aa.BasePath(), wantBasePath) {
+		t.Errorf("BasePath() = %v, want %v", aa.BasePath(), wantBasePath)
+	}
+
+	// Check field
+	if len(aa.Fields) != 1 || aa.Fields[0].GoName != "AsSet" {
+		t.Errorf("unexpected fields: %v", fieldNames(aa.Fields))
+	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func checkField(t *testing.T, fields map[string]Field, name string, ft FieldType, goType string, vyosPath []string) {
 	t.Helper()
 	f, ok := fields[name]

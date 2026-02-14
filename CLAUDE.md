@@ -9,9 +9,9 @@ Pulumi Go Provider SDK (`github.com/pulumi/pulumi-go-provider`). It talks
 directly to the VyOS HTTP API.
 
 Resources are **code-generated** from VyOS XML interface definitions (from the
-`vyos/vyos-1x` repository, added as a git submodule). The generator parses all
-~125 XML files and emits ~612 Go resource files covering the full VyOS config
-surface.
+`vyos/vyos-1x` repository, added as a git submodule). In the current snapshot,
+the generator parses 123 XML files (1 skipped) and emits 600 unique Go
+resources after deduplication.
 
 See `DESIGN.md` for full research, architecture decisions, and development plan.
 
@@ -31,16 +31,16 @@ pulumi-vyos/
   Makefile                 # Build targets: generate, provider, schema, codegen, test, lint
   .golangci.yml            # Lint config (golangci-lint v2)
   .gitignore               # Ignores bin/, sdk/, resource_gen_*.go, test VM artifacts
-  schema.json              # Generated Pulumi schema
+  schema.json              # Generated Pulumi schema (not committed)
   provider/
     provider.go            # Provider builder, uses GeneratedResources()
-    config.go              # ProviderConfig (host, apiKey, port, protocol, insecure, saveConfig) + getClient + saveIfEnabled
+    config.go              # Config (host, apiKey, port, protocol, insecure, saveConfig) + getClient + saveIfEnabled
     resource_config_file_save.go # Hand-written ConfigFileSave resource (explicit save-to-disk)
     component_static_route.go          # StaticRouteComplete component (route + next-hops)
     component_firewall_ipv4_ruleset.go # FirewallIPv4Ruleset component (firewall + rules)
-    resource_gen_*.go      # Generated resource files (do not edit)
-    resource_gen_helpers.go      # Shared diff/parse helpers
-    resource_gen_registration.go # GeneratedResources() function
+    resource_gen_*.go      # Generated resource files (created by make generate, not committed)
+    resource_gen_helpers.go      # Generated shared diff/parse helpers
+    resource_gen_registration.go # Generated GeneratedResources() function
     cmd/pulumi-resource-vyos/
       main.go              # Provider binary entry point
     vyosclient/
@@ -83,6 +83,7 @@ pulumi-vyos/
         registration.go.tmpl # GeneratedResources() function
   .github/workflows/
     ci.yml                 # CI: lint, test, build, schema verify, SDK gen
+    update-vyos-xml.yml    # Auto-update VyOS XML submodule on upstream changes
 ```
 
 ## Development
@@ -103,6 +104,7 @@ make build        # generate + provider + codegen (full pipeline)
 make test         # Run all unit tests
 make test_integration  # Run integration tests (needs VyOS VM)
 make lint         # Run golangci-lint
+make clean        # Remove generated files and build artifacts
 ```
 
 ### Code Generation Pipeline
@@ -110,8 +112,9 @@ make lint         # Run golangci-lint
 1. `make generate` parses VyOS XML files from `codegen/vyos-1x/interface-definitions/`
 2. Resolves `#include` directives, unmarshals XML into typed structs
 3. Walks the XML tree to detect resource boundaries (tagNodes, owned leafNodes)
-4. Emits `provider/resource_gen_*.go` files with full CRUD implementations
-5. `make build` then compiles, extracts schema, and generates SDKs
+4. Deduplicates: merges true duplicates (same API path), disambiguates naming collisions by inserting intermediate path segments (e.g., `VRFNameArea` becomes `VRFNameOSPFArea` vs `VRFNameOspfv3Area`)
+5. Emits `provider/resource_gen_*.go` files with full CRUD implementations
+6. `make build` then compiles, extracts schema, and generates SDKs
 
 ### Resource Types
 
