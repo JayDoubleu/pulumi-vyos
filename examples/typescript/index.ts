@@ -1,7 +1,7 @@
 import * as vyos from "@jaydoubleu/pulumi-vyos";
 
-const hostname = new vyos.SystemHostname("hostname", {
-    hostname: "my-vyos-router",
+const hostname = new vyos.SystemHostName("hostname", {
+    hostName: "my-vyos-router",
 });
 
-export const hostnameValue = hostname.hostname;
+export const hostnameValue = hostname.hostName;

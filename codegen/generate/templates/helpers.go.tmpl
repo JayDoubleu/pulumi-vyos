@@ -4,8 +4,13 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
+	"strings"
+
+	p "github.com/pulumi/pulumi-go-provider"
 
 	"github.com/jaydoubleu/pulumi-vyos/provider/vyosclient"
 )
@@ -47,8 +52,10 @@ func getNestedValue(data json.RawMessage, path []string) (json.RawMessage, bool)
 }
 
 // diffStringField returns operations for a single-value string field change.
+// Uses pointer-aware comparison so nil-to-empty and empty-to-nil transitions
+// are correctly detected as changes.
 func diffStringField(base []any, path []string, prev, cur *string) []vyosclient.Operation {
-	if ptrStr(prev) == ptrStr(cur) {
+	if (prev == nil) == (cur == nil) && (prev == nil || *prev == *cur) {
 		return nil
 	}
 	fullPath := appendPath(base, path...)
@@ -59,8 +66,10 @@ func diffStringField(base []any, path []string, prev, cur *string) []vyosclient.
 }
 
 // diffIntField returns operations for a single-value int field change.
+// Uses pointer-aware comparison so nil-to-zero and zero-to-nil transitions
+// are correctly detected as changes.
 func diffIntField(base []any, path []string, prev, cur *int) []vyosclient.Operation {
-	if ptrInt(prev) == ptrInt(cur) {
+	if (prev == nil) == (cur == nil) && (prev == nil || *prev == *cur) {
 		return nil
 	}
 	fullPath := appendPath(base, path...)
@@ -143,16 +152,38 @@ func toSet(items []string) map[string]bool {
 	return s
 }
 
-func ptrStr(p *string) string {
-	if p == nil {
-		return ""
+
+// isEmptyConfigError returns true if the error is a VyOS API error indicating
+// that the configuration path exists but has no child values. This happens for
+// tag nodes with no optional properties set.
+func isEmptyConfigError(err error) bool {
+	var apiErr *vyosclient.APIError
+	if errors.As(err, &apiErr) {
+		return strings.Contains(apiErr.Message, "Configuration under specified path is empty")
 	}
-	return *p
+	return false
 }
 
-func ptrInt(p *int) int {
-	if p == nil {
-		return 0
+// checkRegex returns a CheckFailure if value does not match the compiled pattern.
+func checkRegex(value string, re *regexp.Regexp, field, errMsg string) *p.CheckFailure {
+	if re.MatchString(value) {
+		return nil
 	}
-	return *p
+	msg := errMsg
+	if msg == "" {
+		msg = fmt.Sprintf("value %q does not match pattern %s", value, re.String())
+	}
+	return &p.CheckFailure{Property: field, Reason: msg}
+}
+
+// checkIntRange returns a CheckFailure if value is outside [min, max].
+func checkIntRange(value, min, max int64, field, errMsg string) *p.CheckFailure {
+	if value >= min && value <= max {
+		return nil
+	}
+	msg := errMsg
+	if msg == "" {
+		msg = fmt.Sprintf("value %d is outside range %d-%d", value, min, max)
+	}
+	return &p.CheckFailure{Property: field, Reason: msg}
 }

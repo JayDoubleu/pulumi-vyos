@@ -22,7 +22,11 @@ func Provider() p.Provider {
 		WithDescription("A Pulumi provider for managing VyOS network appliances.").
 		WithGoImportPath("github.com/jaydoubleu/pulumi-vyos/sdk/go/vyos").
 		WithConfig(infer.Config(&Config{})).
-		WithResources(GeneratedResources()...).
+		WithResources(append(GeneratedResources(), infer.Resource(ConfigFileSave{}))...).
+		WithComponents(
+			infer.ComponentF(NewStaticRouteComplete),
+			infer.ComponentF(NewFirewallIPv4Ruleset),
+		).
 		WithModuleMap(map[tokens.ModuleName]tokens.ModuleName{
 			"provider": "index",
 		}).

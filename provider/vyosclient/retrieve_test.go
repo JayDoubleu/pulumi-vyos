@@ -133,3 +133,26 @@ func TestExists_FalseErrorResponse(t *testing.T) {
 		t.Error("Exists() = true, want false")
 	}
 }
+
+func TestExists_UnknownAPIError_Propagates(t *testing.T) {
+	t.Parallel()
+
+	srv := newTestServer(t, func(_, _ string) (int, apiResponse) {
+		// An unknown error with StatusCode==0 should not be swallowed.
+		return http.StatusOK, errorResponse("internal processing error")
+	})
+	defer srv.Close()
+
+	c := New(srv.URL, "test-api-key")
+	_, err := c.Exists(t.Context(), []string{"system", "host-name"})
+	if err == nil {
+		t.Fatal("Exists() error = nil, want error for unknown API error")
+	}
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("error type = %T, want *APIError", err)
+	}
+	if apiErr.StatusCode != 0 {
+		t.Errorf("StatusCode = %d, want 0", apiErr.StatusCode)
+	}
+}

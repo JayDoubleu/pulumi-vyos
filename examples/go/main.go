@@ -7,14 +7,14 @@ import (
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		hostname, err := vyos.NewSystemHostname(ctx, "hostname", &vyos.SystemHostnameArgs{
-			Hostname: pulumi.String("my-vyos-router"),
+		hostname, err := vyos.NewSystemHostName(ctx, "hostname", &vyos.SystemHostNameArgs{
+			HostName: pulumi.String("my-vyos-router"),
 		})
 		if err != nil {
 			return err
 		}
 
-		ctx.Export("hostname", hostname.Hostname)
+		ctx.Export("hostname", hostname.HostName)
 		return nil
 	})
 }

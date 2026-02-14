@@ -6,6 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+{{- if .NeedsRegexp}}
+	"regexp"
+{{- end}}
 {{- if .NeedsStrconv}}
 	"strconv"
 {{- end}}
@@ -53,6 +56,26 @@ func (args *{{.GoName}}Args) Annotate(a infer.Annotator) {
 {{- end}}
 }
 
+{{- if .HasConstraints}}
+
+{{- range .RegexVars}}
+var {{.VarName}} = regexp.MustCompile(`^(?:` + {{.PatternLit}} + `)$`)
+{{- end}}
+
+// Check validates the {{.GoName}} inputs.
+func ({{.GoName}}) Check(
+	ctx context.Context,
+	req infer.CheckRequest,
+) (infer.CheckResponse[{{.GoName}}Args], error) {
+	inputs, failures, err := infer.DefaultCheck[{{.GoName}}Args](ctx, req.NewInputs)
+	if err != nil {
+		return infer.CheckResponse[{{.GoName}}Args]{}, err
+	}
+{{checkBody .}}
+	return infer.CheckResponse[{{.GoName}}Args]{Inputs: inputs, Failures: failures}, nil
+}
+{{- end}}
+
 {{if .IsTagNode}}
 {{- /* TagNodeResource: basePath, Create, Read, Update, Delete, buildOps, buildUpdateOps, parseConfig */}}
 
@@ -73,13 +96,12 @@ func ({{.GoName}}) Create(
 	}
 
 	ops := build{{.GoName}}Ops(req.Inputs)
-	if len(ops) > 0 {
-		client := getClient(ctx)
-		if err := client.BatchConfigure(ctx, ops); err != nil {
-			return infer.CreateResponse[{{.GoName}}State]{},
-				fmt.Errorf("configure {{.GoName}} %s: %w", req.Inputs.Name, err)
-		}
+	client := getClient(ctx)
+	if err := client.BatchConfigure(ctx, ops); err != nil {
+		return infer.CreateResponse[{{.GoName}}State]{},
+			fmt.Errorf("configure {{.GoName}} %s: %w", req.Inputs.Name, err)
 	}
+	saveIfEnabled(ctx)
 
 	return infer.CreateResponse[{{.GoName}}State]{
 		ID:     req.Inputs.Name,
@@ -97,6 +119,16 @@ func ({{.GoName}}) Read(
 
 	data, err := client.ShowConfig(ctx, pathToStrings(base))
 	if err != nil {
+		if isEmptyConfigError(err) {
+			// Tag node exists but has no child properties. Return minimal state.
+			args := {{.ReadEmptyArgs}}
+			state := {{.GoName}}State{ {{- .GoName}}Args: args}
+			return infer.ReadResponse[{{.GoName}}Args, {{.GoName}}State]{
+				ID:     req.State.Name,
+				Inputs: args,
+				State:  state,
+			}, nil
+		}
 		return infer.ReadResponse[{{.GoName}}Args, {{.GoName}}State]{},
 			fmt.Errorf("read {{.GoName}} %s: %w", req.State.Name, err)
 	}
@@ -133,6 +165,7 @@ func ({{.GoName}}) Update(
 			return infer.UpdateResponse[{{.GoName}}State]{},
 				fmt.Errorf("update {{.GoName}} %s: %w", req.Inputs.Name, err)
 		}
+		saveIfEnabled(ctx)
 	}
 
 	return infer.UpdateResponse[{{.GoName}}State]{
@@ -150,14 +183,17 @@ func ({{.GoName}}) Delete(
 	if err := client.Delete(ctx, pathToStrings(base)); err != nil {
 		return infer.DeleteResponse{}, fmt.Errorf("delete {{.GoName}} %s: %w", req.State.Name, err)
 	}
+	saveIfEnabled(ctx)
 	return infer.DeleteResponse{}, nil
 }
 
 // build{{.GoName}}Ops builds set operations for all non-nil fields.
 func build{{.GoName}}Ops(args {{.GoName}}Args) []vyosclient.Operation {
-	var ops []vyosclient.Operation
-{{- if .Fields}}
 	base := {{.LowerName}}BasePath({{.BuildOpsBasePathArgs}})
+	ops := []vyosclient.Operation{
+		{Op: "set", Path: base},
+	}
+{{- if .Fields}}
 {{range .Fields}}
 {{- if eq .FieldType 3}}
 	for _, v := range args.{{.GoName}} {
@@ -267,6 +303,7 @@ func ({{.GoName}}) Create(
 	if err := client.Set(ctx, {{.LeafPathLit}}, req.Inputs.{{.LeafFieldGoName}}); err != nil {
 		return infer.CreateResponse[{{.GoName}}State]{}, fmt.Errorf("set {{.GoName}}: %w", err)
 	}
+	saveIfEnabled(ctx)
 
 	return infer.CreateResponse[{{.GoName}}State]{
 		ID:     req.Inputs.{{.LeafFieldGoName}},
@@ -325,6 +362,7 @@ func ({{.GoName}}) Update(
 	if err := client.Set(ctx, {{.LeafPathLit}}, req.Inputs.{{.LeafFieldGoName}}); err != nil {
 		return infer.UpdateResponse[{{.GoName}}State]{}, fmt.Errorf("update {{.GoName}}: %w", err)
 	}
+	saveIfEnabled(ctx)
 
 	return infer.UpdateResponse[{{.GoName}}State]{
 		Output: {{.GoName}}State{ {{- .GoName}}Args: req.Inputs},
@@ -340,6 +378,7 @@ func ({{.GoName}}) Delete(
 	if err := client.Delete(ctx, {{.LeafPathLit}}); err != nil {
 		return infer.DeleteResponse{}, fmt.Errorf("delete {{.GoName}}: %w", err)
 	}
+	saveIfEnabled(ctx)
 	return infer.DeleteResponse{}, nil
 }
 {{end}}

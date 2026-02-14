@@ -1,0 +1,3 @@
+name: vyos-python-example
+runtime: python
+description: VyOS provider example using Python

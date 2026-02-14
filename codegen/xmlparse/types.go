@@ -44,11 +44,25 @@ type Children struct {
 
 // Properties holds metadata for a node.
 type Properties struct {
-	Help       string      `xml:"help"`
-	Priority   *int        `xml:"priority"`
-	Valueless  *struct{}   `xml:"valueless"`
-	Multi      *struct{}   `xml:"multi"`
-	ValueHelps []ValueHelp `xml:"valueHelp"`
+	Help                   string      `xml:"help"`
+	Priority               *int        `xml:"priority"`
+	Valueless              *struct{}   `xml:"valueless"`
+	Multi                  *struct{}   `xml:"multi"`
+	ValueHelps             []ValueHelp `xml:"valueHelp"`
+	Constraint             *Constraint `xml:"constraint"`
+	ConstraintErrorMessage string      `xml:"constraintErrorMessage"`
+}
+
+// Constraint defines validation rules for a VyOS config value.
+type Constraint struct {
+	Regex      []string    `xml:"regex"`
+	Validators []Validator `xml:"validator"`
+}
+
+// Validator references a named VyOS validation function.
+type Validator struct {
+	Name     string `xml:"name,attr"`
+	Argument string `xml:"argument,attr"`
 }
 
 // ValueHelp describes an accepted value format.

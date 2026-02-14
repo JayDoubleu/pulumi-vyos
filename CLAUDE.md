@@ -34,7 +34,10 @@ pulumi-vyos/
   schema.json              # Generated Pulumi schema
   provider/
     provider.go            # Provider builder, uses GeneratedResources()
-    config.go              # ProviderConfig (host, apiKey, port, protocol, insecure) + getClient
+    config.go              # ProviderConfig (host, apiKey, port, protocol, insecure, saveConfig) + getClient + saveIfEnabled
+    resource_config_file_save.go # Hand-written ConfigFileSave resource (explicit save-to-disk)
+    component_static_route.go          # StaticRouteComplete component (route + next-hops)
+    component_firewall_ipv4_ruleset.go # FirewallIPv4Ruleset component (firewall + rules)
     resource_gen_*.go      # Generated resource files (do not edit)
     resource_gen_helpers.go      # Shared diff/parse helpers
     resource_gen_registration.go # GeneratedResources() function
@@ -60,13 +63,14 @@ pulumi-vyos/
     cmd/generate/
       main.go              # CLI: --xml-dir, --output-dir flags
     xmlparse/
-      types.go             # XML schema structs
+      types.go             # XML schema structs (incl. Constraint, Validator)
       preprocess.go        # Recursive #include resolution
       unmarshal.go          # Preprocess + XML unmarshal entry point
       *_test.go            # Tests with testdata samples
     model/
-      ir.go                # IR types: Resource, Field, ResourceKind, FieldType
+      ir.go                # IR types: Resource, Field, ResourceKind, FieldType, FieldConstraint
       builder.go           # XML tree -> []Resource (boundary detection, flattening)
+      constraint.go        # BuildConstraint + ParseNumericRange (XML constraint extraction)
       naming.go            # Kebab-to-PascalCase, PascalCase-to-camelCase, reserved names
       typing.go            # Type inference from XML properties
       *_test.go            # Comprehensive test coverage
@@ -113,6 +117,24 @@ make lint         # Run golangci-lint
 
 - **TagNodeResource**: Named config objects (e.g., `interfaces ethernet eth0`). Uses BatchConfigure for atomic operations. Has a `Name` tag field.
 - **LeafNodeResource**: Single-value config entries (e.g., `system host-name`). Uses Set/Delete directly.
+
+### Component Resources
+
+Hand-written components using `infer.ComponentF()` that bundle related resources:
+
+- **StaticRouteComplete**: Route prefix + N next-hops (`component_static_route.go`)
+- **FirewallIPv4Ruleset**: Firewall policy + N rules (`component_firewall_ipv4_ruleset.go`)
+
+Components use `ctx.RegisterResource()` with type tokens (e.g. `vyos:index:ProtocolStaticRoute`)
+to create child custom resources. A `childResource` type embeds `pulumi.CustomResourceState`
+for these children. Args use plain Go types; outputs use `pulumi.Output` types.
+
+### Check Validation
+
+Resources with XML `<constraint>` elements get a `Check` method for client-side
+validation before API calls. Supports regex patterns and numeric ranges. Perl-only
+regex syntax (lookahead/lookbehind) is skipped at codegen time. Named validators
+(ipv4-address, mac-address, etc.) are not yet covered.
 
 ### Field Types
 

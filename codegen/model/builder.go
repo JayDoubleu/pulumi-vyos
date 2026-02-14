@@ -150,19 +150,22 @@ func buildTagNodeResource(tn *xmlparse.TagNode, parentPath []string, parentIsCon
 		helpText = tn.Properties.Help
 	}
 
+	tagField := TagField{
+		GoName:      "Name",
+		PulumiName:  "name",
+		Description: helpText,
+		PathPrefix:  append([]string{}, resourcePath...),
+	}
+	if tn.Properties != nil {
+		tagField.Constraint = BuildConstraint(tn.Properties)
+	}
+
 	res := Resource{
 		GoName:      goName,
 		Description: helpText,
 		Kind:        TagNodeResource,
 		FileName:    fileName,
-		TagFields: []TagField{
-			{
-				GoName:      "Name",
-				PulumiName:  "name",
-				Description: helpText,
-				PathPrefix:  append([]string{}, resourcePath...),
-			},
-		},
+		TagFields:   []TagField{tagField},
 	}
 
 	var subResources []Resource
@@ -203,23 +206,26 @@ func buildLeafNodeResource(ln *xmlparse.LeafNode, parentPath []string, parentIsC
 	fieldPulumiName := PascalToCamel(fieldGoName)
 	fieldGoName, fieldPulumiName = FixReservedFieldName(fieldGoName, fieldPulumiName)
 
+	field := Field{
+		GoName:      fieldGoName,
+		PulumiName:  fieldPulumiName,
+		VyosName:    ln.Name,
+		VyosPath:    []string{ln.Name},
+		GoType:      GoTypeForRequired(ft),
+		FieldType:   ft,
+		Description: helpText,
+	}
+	if ln.Properties != nil {
+		field.Constraint = BuildConstraint(ln.Properties)
+	}
+
 	return Resource{
 		GoName:      goName,
 		Description: helpText,
 		Kind:        LeafNodeResource,
 		FileName:    fileName,
 		LeafPath:    append([]string{}, resourcePath...),
-		Fields: []Field{
-			{
-				GoName:      fieldGoName,
-				PulumiName:  fieldPulumiName,
-				VyosName:    ln.Name,
-				VyosPath:    []string{ln.Name},
-				GoType:      GoTypeForRequired(ft),
-				FieldType:   ft,
-				Description: helpText,
-			},
-		},
+		Fields:      []Field{field},
 	}, true
 }
 
@@ -342,7 +348,7 @@ func buildField(ln *xmlparse.LeafNode, prefix []string) Field {
 	vyosPath = append(vyosPath, prefix...)
 	vyosPath = append(vyosPath, ln.Name)
 
-	return Field{
+	f := Field{
 		GoName:      goName,
 		PulumiName:  pulumiName,
 		VyosName:    ln.Name,
@@ -351,4 +357,8 @@ func buildField(ln *xmlparse.LeafNode, prefix []string) Field {
 		FieldType:   ft,
 		Description: helpText,
 	}
+	if ln.Properties != nil {
+		f.Constraint = BuildConstraint(ln.Properties)
+	}
+	return f
 }

@@ -24,6 +24,10 @@ func TestGenerate_TagNodeResource(t *testing.T) {
 					PulumiName:  "name",
 					Description: "Ethernet Interface",
 					PathPrefix:  []string{"interfaces", "ethernet"},
+					Constraint: &model.FieldConstraint{
+						Patterns:     []string{`((eth|lan)[0-9]+|(eno|ens|enp|enx).+)`},
+						ErrorMessage: "Invalid Ethernet interface name",
+					},
 				},
 			},
 			Fields: []model.Field{
@@ -53,6 +57,10 @@ func TestGenerate_TagNodeResource(t *testing.T) {
 					GoType:      "*int",
 					FieldType:   model.IntField,
 					Description: "MTU",
+					Constraint: &model.FieldConstraint{
+						NumericRange: &model.Range{Min: 68, Max: 16000},
+						ErrorMessage: "MTU must be between 68 and 16000",
+					},
 				},
 				{
 					GoName:      "Address",
@@ -71,6 +79,19 @@ func TestGenerate_TagNodeResource(t *testing.T) {
 					GoType:      "*bool",
 					FieldType:   model.BoolField,
 					Description: "Enable GRO",
+				},
+				{
+					GoName:      "Duplex",
+					PulumiName:  "duplex",
+					VyosName:    "duplex",
+					VyosPath:    []string{"duplex"},
+					GoType:      "*string",
+					FieldType:   model.StringField,
+					Description: "Duplex mode",
+					Constraint: &model.FieldConstraint{
+						Patterns:     []string{`(auto|half|full)`},
+						ErrorMessage: "duplex must be auto, half or full",
+					},
 				},
 			},
 		},
@@ -127,6 +148,18 @@ func TestGenerate_TagNodeResource(t *testing.T) {
 		`"strconv"`,
 		`strconv.Itoa(*args.MTU)`,
 		`getNestedValue(data, []string{"offload", "gro"})`,
+		"saveIfEnabled(ctx)",
+		// Check method and constraint validation.
+		`"regexp"`,
+		"func (InterfaceEthernet) Check(",
+		"interfaceEthernetNameRe",
+		"regexp.MustCompile",
+		"checkRegex(inputs.Name",
+		"checkIntRange(int64(*inputs.MTU)",
+		"68, 16000",
+		"checkRegex(*inputs.Duplex",
+		"interfaceEthernetDuplexRe",
+		"infer.DefaultCheck[InterfaceEthernetArgs]",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("missing %q in generated code", want)
@@ -189,6 +222,7 @@ func TestGenerate_LeafNodeResource(t *testing.T) {
 		`client.Delete(ctx, []string{"system", "host-name"}`,
 		`client.ShowConfig(ctx, []string{"system"})`,
 		`raw["host-name"]`,
+		"saveIfEnabled(ctx)",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("missing %q in generated code", want)

@@ -1,0 +1,70 @@
+name: Update VyOS XML Definitions
+
+on:
+  schedule:
+    - cron: "0 0 * * 0" # Sunday midnight UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: Check for VyOS XML updates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Get current submodule commit
+        id: old
+        run: echo "sha=$(git -C codegen/vyos-1x rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Update submodule to latest
+        run: git submodule update --remote codegen/vyos-1x
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet codegen/vyos-1x; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git -C codegen/vyos-1x rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Pulumi
+        if: steps.diff.outputs.changed == 'true'
+        uses: pulumi/actions@v6
+        with:
+          pulumi-version: latest
+
+      - name: Generate resources
+        if: steps.diff.outputs.changed == 'true'
+        run: make generate
+
+      - name: Build provider and regenerate schema
+        if: steps.diff.outputs.changed == 'true'
+        run: make provider schema
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: update VyOS XML definitions to ${{ steps.diff.outputs.sha }}"
+          title: "chore: update VyOS XML definitions to ${{ steps.diff.outputs.sha }}"
+          body: |
+            Updates `codegen/vyos-1x` submodule to the latest commit.
+
+            Compare changes: https://github.com/vyos/vyos-1x/compare/${{ steps.old.outputs.sha }}...${{ steps.diff.outputs.sha }}
+          branch: update-vyos-xml
+          delete-branch: true

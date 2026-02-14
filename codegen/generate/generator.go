@@ -24,6 +24,7 @@ func Generate(resources []model.Resource, outputDir string) error {
 		"vyosPathLit":    vyosPathLit,
 		"isOptionalType": isOptionalType,
 		"escapeGo":       escapeGo,
+		"checkBody":      checkBody,
 	}
 
 	resourceTmpl, err := template.New("resource.go.tmpl").Funcs(funcMap).ParseFS(templateFS, "templates/resource.go.tmpl")
@@ -200,6 +201,17 @@ func (td TemplateData) tagFieldArgs(prefix string) string {
 	return strings.Join(names, ", ")
 }
 
+// ReadEmptyArgs returns Go code that constructs a minimal Args struct with only
+// tag fields populated from req.State. Used when ShowConfig returns "empty"
+// for a tag node that exists but has no child properties.
+func (td TemplateData) ReadEmptyArgs() string {
+	var parts []string
+	for _, tf := range td.TagFields {
+		parts = append(parts, fmt.Sprintf("%s: req.State.%s", tf.GoName, tf.GoName))
+	}
+	return td.GoName + "Args{" + strings.Join(parts, ", ") + "}"
+}
+
 // LeafFieldGoName returns the Go field name for a leaf resource's value field.
 func (td TemplateData) LeafFieldGoName() string {
 	if len(td.Fields) > 0 {
@@ -228,4 +240,123 @@ func (td TemplateData) LeafVyosName() string {
 		return td.LeafPath[len(td.LeafPath)-1]
 	}
 	return ""
+}
+
+// NeedsRegexp returns true if any constraint has regex patterns.
+func (td TemplateData) NeedsRegexp() bool {
+	for _, tf := range td.TagFields {
+		if tf.Constraint != nil && len(tf.Constraint.Patterns) > 0 {
+			return true
+		}
+	}
+	for _, f := range td.Fields {
+		if f.Constraint != nil && len(f.Constraint.Patterns) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// RegexVarInfo holds data for a compiled regex variable declaration.
+type RegexVarInfo struct {
+	VarName    string
+	PatternLit string
+}
+
+// RegexVars returns the list of regex variable declarations for this resource.
+func (td TemplateData) RegexVars() []RegexVarInfo {
+	lower := td.LowerName()
+	var vars []RegexVarInfo
+	for _, tf := range td.TagFields {
+		if tf.Constraint != nil && len(tf.Constraint.Patterns) > 0 {
+			vars = append(vars, RegexVarInfo{
+				VarName:    lower + tf.GoName + "Re",
+				PatternLit: strconv.Quote(strings.Join(tf.Constraint.Patterns, "|")),
+			})
+		}
+	}
+	for _, f := range td.Fields {
+		if f.Constraint != nil && len(f.Constraint.Patterns) > 0 {
+			vars = append(vars, RegexVarInfo{
+				VarName:    lower + f.GoName + "Re",
+				PatternLit: strconv.Quote(strings.Join(f.Constraint.Patterns, "|")),
+			})
+		}
+	}
+	return vars
+}
+
+// checkBody generates the Go validation code for a Check method body.
+func checkBody(td TemplateData) string {
+	var b strings.Builder
+	lower := td.LowerName()
+
+	for _, tf := range td.TagFields {
+		if tf.Constraint == nil {
+			continue
+		}
+		c := tf.Constraint
+		if len(c.Patterns) > 0 {
+			varName := lower + tf.GoName + "Re"
+			errMsg := strconv.Quote(c.ErrorMessage)
+			fmt.Fprintf(&b, "\tif f := checkRegex(inputs.%s, %s, %q, %s); f != nil {\n",
+				tf.GoName, varName, tf.PulumiName, errMsg)
+			b.WriteString("\t\tfailures = append(failures, *f)\n")
+			b.WriteString("\t}\n")
+		}
+	}
+
+	for _, f := range td.Fields {
+		if f.Constraint == nil {
+			continue
+		}
+		c := f.Constraint
+		errMsg := strconv.Quote(c.ErrorMessage)
+
+		if len(c.Patterns) > 0 {
+			varName := lower + f.GoName + "Re"
+			switch f.FieldType {
+			case model.StringField:
+				if strings.HasPrefix(f.GoType, "*") {
+					fmt.Fprintf(&b, "\tif inputs.%s != nil {\n", f.GoName)
+					fmt.Fprintf(&b, "\t\tif f := checkRegex(*inputs.%s, %s, %q, %s); f != nil {\n",
+						f.GoName, varName, f.PulumiName, errMsg)
+					b.WriteString("\t\t\tfailures = append(failures, *f)\n")
+					b.WriteString("\t\t}\n")
+					b.WriteString("\t}\n")
+				} else {
+					fmt.Fprintf(&b, "\tif f := checkRegex(inputs.%s, %s, %q, %s); f != nil {\n",
+						f.GoName, varName, f.PulumiName, errMsg)
+					b.WriteString("\t\tfailures = append(failures, *f)\n")
+					b.WriteString("\t}\n")
+				}
+			case model.MultiField:
+				fmt.Fprintf(&b, "\tfor _, v := range inputs.%s {\n", f.GoName)
+				fmt.Fprintf(&b, "\t\tif f := checkRegex(v, %s, %q, %s); f != nil {\n",
+					varName, f.PulumiName, errMsg)
+				b.WriteString("\t\t\tfailures = append(failures, *f)\n")
+				b.WriteString("\t\t\tbreak\n")
+				b.WriteString("\t\t}\n")
+				b.WriteString("\t}\n")
+			}
+		}
+
+		if c.NumericRange != nil && f.FieldType == model.IntField {
+			if strings.HasPrefix(f.GoType, "*") {
+				fmt.Fprintf(&b, "\tif inputs.%s != nil {\n", f.GoName)
+				fmt.Fprintf(&b, "\t\tif f := checkIntRange(int64(*inputs.%s), %d, %d, %q, %s); f != nil {\n",
+					f.GoName, c.NumericRange.Min, c.NumericRange.Max, f.PulumiName, errMsg)
+				b.WriteString("\t\t\tfailures = append(failures, *f)\n")
+				b.WriteString("\t\t}\n")
+				b.WriteString("\t}\n")
+			} else {
+				fmt.Fprintf(&b, "\tif f := checkIntRange(int64(inputs.%s), %d, %d, %q, %s); f != nil {\n",
+					f.GoName, c.NumericRange.Min, c.NumericRange.Max, f.PulumiName, errMsg)
+				b.WriteString("\t\tfailures = append(failures, *f)\n")
+				b.WriteString("\t}\n")
+			}
+		}
+	}
+
+	return b.String()
 }

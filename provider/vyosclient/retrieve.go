@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ShowConfig retrieves the configuration at the given path.
@@ -41,7 +42,11 @@ func (c *Client) Exists(ctx context.Context, path []string) (bool, error) {
 	respData, err := c.post(ctx, "/retrieve", data)
 	if err != nil {
 		// Some VyOS versions return success=false when path doesn't exist.
-		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 0 {
+		// Only treat known "not found" messages as false; other StatusCode==0
+		// errors (internal failures, malformed paths) should propagate.
+		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 0 &&
+			(strings.Contains(apiErr.Message, "specified path") ||
+				strings.Contains(apiErr.Message, "does not exist")) {
 			return false, nil
 		}
 		return false, err

@@ -12,8 +12,45 @@ config:
     default: true
 resources:
   hostname:
-    type: vyos:index:SystemHostname
+    type: vyos:index:SystemHostName
     properties:
-      hostname: my-vyos-router
+      hostName: my-vyos-router
+
+  # Component resource: static route with next-hops (no manual depends_on needed)
+  mgmt-route:
+    type: vyos:index:StaticRouteComplete
+    properties:
+      prefix: "10.10.0.0/16"
+      description: "Management network route"
+      nextHops:
+        - address: "10.0.0.254"
+        - address: "10.0.0.253"
+          distance: 10
+
+  # Component resource: firewall ruleset with rules
+  allow-web:
+    type: vyos:index:FirewallIPv4Ruleset
+    properties:
+      name: allow-web
+      defaultAction: drop
+      description: "Allow inbound web traffic"
+      rules:
+        - number: 10
+          action: accept
+          protocol: tcp
+          destinationPort: "80"
+          state:
+            - established
+            - new
+        - number: 20
+          action: accept
+          protocol: tcp
+          destinationPort: "443"
+          state:
+            - established
+            - new
+
 outputs:
-  hostnameValue: ${hostname.hostname}
+  hostnameValue: ${hostname.hostName}
+  routePrefix: ${mgmt-route.prefix}
+  firewallName: ${allow-web.name}

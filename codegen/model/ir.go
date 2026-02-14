@@ -32,21 +32,36 @@ const (
 
 // TagField describes one tag node key segment in the resource's VyOS path.
 type TagField struct {
-	GoName      string   // "Name", "ZoneName"
-	PulumiName  string   // "name", "zoneName"
-	Description string   // From the tagNode's <help>
-	PathPrefix  []string // Static path segments before this tag value
+	GoName      string           // "Name", "ZoneName"
+	PulumiName  string           // "name", "zoneName"
+	Description string           // From the tagNode's <help>
+	PathPrefix  []string         // Static path segments before this tag value
+	Constraint  *FieldConstraint // Validation constraint from XML
 }
 
 // Field represents one configurable property on a resource.
 type Field struct {
-	GoName      string    // PascalCase: "DisableFlowControl"
-	PulumiName  string    // camelCase: "disableFlowControl"
-	VyosName    string    // Original last segment: "disable-flow-control"
-	VyosPath    []string  // Relative path from resource base: ["offload", "gro"]
-	GoType      string    // "*string", "*int", "*bool", "[]string"
-	FieldType   FieldType // How CRUD handles this field
-	Description string    // From XML <help>
+	GoName      string           // PascalCase: "DisableFlowControl"
+	PulumiName  string           // camelCase: "disableFlowControl"
+	VyosName    string           // Original last segment: "disable-flow-control"
+	VyosPath    []string         // Relative path from resource base: ["offload", "gro"]
+	GoType      string           // "*string", "*int", "*bool", "[]string"
+	FieldType   FieldType        // How CRUD handles this field
+	Description string           // From XML <help>
+	Constraint  *FieldConstraint // Validation constraint from XML
+}
+
+// FieldConstraint holds parsed validation rules for a field.
+type FieldConstraint struct {
+	Patterns     []string // Regex patterns from <regex>
+	NumericRange *Range   // Parsed from validator name="numeric" argument="--range N-M"
+	ErrorMessage string   // From <constraintErrorMessage>
+}
+
+// Range represents a numeric min/max constraint.
+type Range struct {
+	Min int64
+	Max int64
 }
 
 // FieldType controls how the code generator emits CRUD operations for a field.
@@ -59,6 +74,21 @@ const (
 	BoolField                    // *bool, valueless (set path only, no value)
 	MultiField                   // []string, each value in path (no value field)
 )
+
+// HasConstraints returns true if any field or tag field has validation constraints.
+func (r *Resource) HasConstraints() bool {
+	for _, tf := range r.TagFields {
+		if tf.Constraint != nil {
+			return true
+		}
+	}
+	for _, f := range r.Fields {
+		if f.Constraint != nil {
+			return true
+		}
+	}
+	return false
+}
 
 // NeedsStrconv returns true if any field requires the strconv package.
 func (r *Resource) NeedsStrconv() bool {

@@ -46,6 +46,26 @@ func skipIfVMUnavailable(t *testing.T, client *vyosclient.Client) {
 	}
 }
 
+// vyosClientWithKey creates a VyOS API client with a custom API key.
+// Unlike vyosClient, it does not call skipIfVMUnavailable, so callers
+// can test authentication failures against a running VM.
+func vyosClientWithKey(t *testing.T, apiKey string) *vyosclient.Client {
+	t.Helper()
+
+	host := envOrDefault("VYOS_HOST", "localhost")
+	port := envOrDefault("VYOS_API_PORT", "8443")
+
+	baseURL := fmt.Sprintf("https://%s:%s", host, port)
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test VM uses self-signed cert
+		},
+	}
+
+	return vyosclient.New(baseURL, apiKey, vyosclient.WithHTTPClient(httpClient))
+}
+
 func envOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

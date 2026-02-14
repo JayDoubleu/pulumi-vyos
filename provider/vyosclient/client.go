@@ -101,9 +101,13 @@ func (c *Client) post(ctx context.Context, endpoint string, data json.RawMessage
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	const maxResponseSize = 10 << 20 // 10 MiB
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response body: %w", err)
+	}
+	if len(respBody) > maxResponseSize {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxResponseSize)
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
