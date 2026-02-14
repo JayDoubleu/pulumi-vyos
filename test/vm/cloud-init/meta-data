@@ -1,0 +1,2 @@
+instance-id: vyos-pulumi-test
+local-hostname: vyos-test
