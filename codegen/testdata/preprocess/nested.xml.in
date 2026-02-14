@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<interfaceDefinition>
+  <node name="test">
+    <children>
+      #include <include/with-nested.xml.i>
+    </children>
+  </node>
+</interfaceDefinition>

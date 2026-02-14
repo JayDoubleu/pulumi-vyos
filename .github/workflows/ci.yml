@@ -15,23 +15,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v6
+      - name: Generate resources
+        run: make generate
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.9.0
+          args: ./provider/... ./codegen/...
 
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Generate resources
+        run: make generate
       - name: Run unit tests
-        run: go test -v -count=1 -race ./provider/...
+        run: go test -v -count=1 -race ./provider/... ./codegen/...
 
   build:
     name: Build
@@ -39,12 +48,16 @@ jobs:
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - uses: pulumi/actions@v6
         with:
           pulumi-version: latest
+      - name: Generate resources
+        run: make generate
       - name: Build provider
         run: make provider
       - name: Generate schema

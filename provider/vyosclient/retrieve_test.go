@@ -81,7 +81,8 @@ func TestExists_True(t *testing.T) {
 		if req["op"] != "exists" {
 			t.Errorf("op = %v, want exists", req["op"])
 		}
-		return http.StatusOK, successResponse(nil)
+		// VyOS returns {success: true, data: true} when path exists.
+		return http.StatusOK, successResponse(true)
 	})
 	defer srv.Close()
 
@@ -99,6 +100,26 @@ func TestExists_False(t *testing.T) {
 	t.Parallel()
 
 	srv := newTestServer(t, func(_, _ string) (int, apiResponse) {
+		// VyOS returns {success: true, data: false} when path doesn't exist.
+		return http.StatusOK, successResponse(false)
+	})
+	defer srv.Close()
+
+	c := New(srv.URL, "test-api-key")
+	exists, err := c.Exists(t.Context(), []string{"system", "nonexistent"})
+	if err != nil {
+		t.Fatalf("Exists() error: %v", err)
+	}
+	if exists {
+		t.Error("Exists() = true, want false")
+	}
+}
+
+func TestExists_FalseErrorResponse(t *testing.T) {
+	t.Parallel()
+
+	srv := newTestServer(t, func(_, _ string) (int, apiResponse) {
+		// Some VyOS versions return success=false for non-existent paths.
 		return http.StatusOK, errorResponse("Configuration path does not exist")
 	})
 	defer srv.Close()

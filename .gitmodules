@@ -1,0 +1,3 @@
+[submodule "codegen/vyos-1x"]
+	path = codegen/vyos-1x
+	url = https://github.com/vyos/vyos-1x.git

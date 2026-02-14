@@ -52,3 +52,10 @@ func envOrDefault(key, fallback string) string {
 	}
 	return fallback
 }
+
+// deleteIfExists deletes the VyOS config at path, ignoring errors if it
+// doesn't exist. Useful in t.Cleanup to ensure a clean state.
+func deleteIfExists(t *testing.T, client *vyosclient.Client, path []string) {
+	t.Helper()
+	_ = client.Delete(context.Background(), path)
+}

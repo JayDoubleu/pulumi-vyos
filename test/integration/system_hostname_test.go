@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/jaydoubleu/pulumi-vyos/provider/vyosclient"
 )
 
 func TestSystemHostname_CRUD(t *testing.T) {
@@ -13,7 +15,7 @@ func TestSystemHostname_CRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// Read the current hostname so we can restore it after the test.
-	original := readHostname(t, client, ctx)
+	original := readHostname(ctx, t, client)
 	t.Cleanup(func() {
 		if err := client.Set(ctx, []string{"system", "host-name"}, original); err != nil {
 			t.Errorf("cleanup: failed to restore hostname to %q: %v", original, err)
@@ -24,7 +26,7 @@ func TestSystemHostname_CRUD(t *testing.T) {
 	if err := client.Set(ctx, []string{"system", "host-name"}, "integ-test-1"); err != nil {
 		t.Fatalf("Set integ-test-1: %v", err)
 	}
-	if got := readHostname(t, client, ctx); got != "integ-test-1" {
+	if got := readHostname(ctx, t, client); got != "integ-test-1" {
 		t.Fatalf("after create: got hostname %q, want %q", got, "integ-test-1")
 	}
 
@@ -32,7 +34,7 @@ func TestSystemHostname_CRUD(t *testing.T) {
 	if err := client.Set(ctx, []string{"system", "host-name"}, "integ-test-2"); err != nil {
 		t.Fatalf("Set integ-test-2: %v", err)
 	}
-	if got := readHostname(t, client, ctx); got != "integ-test-2" {
+	if got := readHostname(ctx, t, client); got != "integ-test-2" {
 		t.Fatalf("after update: got hostname %q, want %q", got, "integ-test-2")
 	}
 }
@@ -70,7 +72,7 @@ func TestSystemHostname_Idempotent(t *testing.T) {
 	client := vyosClient(t)
 	ctx := context.Background()
 
-	original := readHostname(t, client, ctx)
+	original := readHostname(ctx, t, client)
 	t.Cleanup(func() {
 		if err := client.Set(ctx, []string{"system", "host-name"}, original); err != nil {
 			t.Errorf("cleanup: failed to restore hostname to %q: %v", original, err)
@@ -89,15 +91,13 @@ func TestSystemHostname_Idempotent(t *testing.T) {
 		t.Fatalf("second Set (idempotent): %v", err)
 	}
 
-	if got := readHostname(t, client, ctx); got != name {
+	if got := readHostname(ctx, t, client); got != name {
 		t.Fatalf("after idempotent set: got %q, want %q", got, name)
 	}
 }
 
 // readHostname fetches the current system hostname from VyOS.
-func readHostname(t *testing.T, client interface {
-	ShowConfig(ctx context.Context, path []string) (json.RawMessage, error)
-}, ctx context.Context) string {
+func readHostname(ctx context.Context, t *testing.T, client *vyosclient.Client) string {
 	t.Helper()
 
 	data, err := client.ShowConfig(ctx, []string{"system"})

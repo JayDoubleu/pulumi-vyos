@@ -67,3 +67,8 @@ func (c *Config) Configure(_ context.Context) error {
 func (c Config) Client() vyosclient.API {
 	return c.client
 }
+
+// getClient retrieves the VyOS API client from the provider config context.
+func getClient(ctx context.Context) vyosclient.API {
+	return infer.GetConfig[Config](ctx).Client()
+}

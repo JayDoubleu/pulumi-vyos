@@ -8,6 +8,11 @@ This is a **native** Pulumi provider (not a Terraform bridge) built with the
 Pulumi Go Provider SDK (`github.com/pulumi/pulumi-go-provider`). It talks
 directly to the VyOS HTTP API.
 
+Resources are **code-generated** from VyOS XML interface definitions (from the
+`vyos/vyos-1x` repository, added as a git submodule). The generator parses all
+~125 XML files and emits ~612 Go resource files covering the full VyOS config
+surface.
+
 See `DESIGN.md` for full research, architecture decisions, and development plan.
 
 ## Key Architecture Decisions
@@ -23,17 +28,16 @@ See `DESIGN.md` for full research, architecture decisions, and development plan.
 ```
 pulumi-vyos/
   go.mod, go.sum          # Go module
-  Makefile                 # Build targets: provider, schema, codegen, test, lint
+  Makefile                 # Build targets: generate, provider, schema, codegen, test, lint
   .golangci.yml            # Lint config (golangci-lint v2)
-  .gitignore               # Ignores bin/, sdk/, test VM artifacts
+  .gitignore               # Ignores bin/, sdk/, resource_gen_*.go, test VM artifacts
   schema.json              # Generated Pulumi schema
   provider/
-    provider.go            # Provider builder, resource registration
-    config.go              # ProviderConfig (host, apiKey, port, protocol, insecure)
-    resource_system_hostname.go  # First resource: system hostname CRUD
-    resource_system_hostname_test.go
-    resource_interface_ethernet.go  # Ethernet interface: batch ops, multi-value, valueless booleans
-    resource_interface_ethernet_test.go
+    provider.go            # Provider builder, uses GeneratedResources()
+    config.go              # ProviderConfig (host, apiKey, port, protocol, insecure) + getClient
+    resource_gen_*.go      # Generated resource files (do not edit)
+    resource_gen_helpers.go      # Shared diff/parse helpers
+    resource_gen_registration.go # GeneratedResources() function
     cmd/pulumi-resource-vyos/
       main.go              # Provider binary entry point
     vyosclient/
@@ -51,7 +55,28 @@ pulumi-vyos/
       run.sh               # VM lifecycle helper script
     integration/           # Integration tests (build-tagged)
   codegen/
-    xml-samples/           # Sample VyOS XML interface definitions
+    vyos-1x/               # Git submodule: vyos/vyos-1x XML definitions
+    xml-samples/           # Sample VyOS XML interface definitions (for reference)
+    cmd/generate/
+      main.go              # CLI: --xml-dir, --output-dir flags
+    xmlparse/
+      types.go             # XML schema structs
+      preprocess.go        # Recursive #include resolution
+      unmarshal.go          # Preprocess + XML unmarshal entry point
+      *_test.go            # Tests with testdata samples
+    model/
+      ir.go                # IR types: Resource, Field, ResourceKind, FieldType
+      builder.go           # XML tree -> []Resource (boundary detection, flattening)
+      naming.go            # Kebab-to-PascalCase, PascalCase-to-camelCase, reserved names
+      typing.go            # Type inference from XML properties
+      *_test.go            # Comprehensive test coverage
+    generate/
+      generator.go         # Template loading, execution, gofmt, file writing
+      generator_test.go    # Tests for tag/leaf/nested resource generation
+      templates/
+        resource.go.tmpl   # Per-resource file (structs + CRUD + helpers)
+        helpers.go.tmpl    # Shared helpers (generated once)
+        registration.go.tmpl # GeneratedResources() function
   .github/workflows/
     ci.yml                 # CI: lint, test, build, schema verify, SDK gen
 ```
@@ -66,28 +91,42 @@ pulumi-vyos/
 ### Build
 
 ```bash
+make generate     # Generate resource files from VyOS XML definitions
 make provider     # Build provider binary
 make schema       # Generate schema.json
 make codegen      # Generate all SDKs
-make build        # provider + codegen
-make test              # Run all unit tests
+make build        # generate + provider + codegen (full pipeline)
+make test         # Run all unit tests
 make test_integration  # Run integration tests (needs VyOS VM)
 make lint         # Run golangci-lint
 ```
 
+### Code Generation Pipeline
+
+1. `make generate` parses VyOS XML files from `codegen/vyos-1x/interface-definitions/`
+2. Resolves `#include` directives, unmarshals XML into typed structs
+3. Walks the XML tree to detect resource boundaries (tagNodes, owned leafNodes)
+4. Emits `provider/resource_gen_*.go` files with full CRUD implementations
+5. `make build` then compiles, extracts schema, and generates SDKs
+
+### Resource Types
+
+- **TagNodeResource**: Named config objects (e.g., `interfaces ethernet eth0`). Uses BatchConfigure for atomic operations. Has a `Name` tag field.
+- **LeafNodeResource**: Single-value config entries (e.g., `system host-name`). Uses Set/Delete directly.
+
+### Field Types
+
+- **StringField** (`*string`): Standard string value
+- **IntField** (`*int`): Integer value (VyOS `u32` types)
+- **BoolField** (`*bool`): Valueless flag (set path only, no value)
+- **MultiField** (`[]string`): Multi-value field (each value appended to path)
+
 ### Testing
 
-- **Unit tests**: `make test` or `go test -race ./provider/...` (uses httptest mocks)
-- **Integration tests**: `make test_integration` or `go test -v -count=1 -tags=integration ./test/integration/...` (needs VyOS VM)
+- **Unit tests**: `make test` or `go test -race ./codegen/... ./provider/...`
+- **Integration tests**: `make test_integration` (needs VyOS VM)
 - **VyOS VM**: `test/vm/run.sh start` (QEMU with cloud-init, API on port 8443)
 - Env vars for integration tests: `VYOS_HOST` (default: localhost), `VYOS_API_PORT` (default: 8443), `VYOS_API_KEY` (default: integration-test-key)
-
-### Adding Resources
-
-1. Create `provider/resource_<name>.go` with struct, args, state, CRUD methods
-2. Register in `provider/provider.go` via `infer.Resource()`
-3. Add unit tests in `provider/resource_<name>_test.go`
-4. Run `make build` to regenerate schema and SDKs
 
 ## Git Identity
 

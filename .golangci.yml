@@ -1,8 +1,4 @@
 version: "2"
-run:
-  exclude-dirs:
-    - sdk
-    - examples
 linters:
   enable:
     - errcheck
@@ -13,12 +9,20 @@ linters:
     - gocritic
     - misspell
     - revive
+  exclusions:
+    paths:
+      - sdk
+      - examples
+  settings:
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - disableStutteringCheck
 formatters:
   enable:
     - gofumpt
-linters-settings:
-  revive:
-    rules:
-      - name: exported
-        arguments:
-          - disableStutteringCheck
+  exclusions:
+    paths:
+      - sdk
+      - examples

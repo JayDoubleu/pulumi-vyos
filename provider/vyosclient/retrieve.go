@@ -24,6 +24,7 @@ func (c *Client) ShowConfig(ctx context.Context, path []string) (json.RawMessage
 }
 
 // Exists checks whether a configuration path exists.
+// VyOS returns {success: true, data: true/false} to indicate presence.
 func (c *Client) Exists(ctx context.Context, path []string) (bool, error) {
 	anyPath := make([]any, len(path))
 	for i, p := range path {
@@ -37,13 +38,17 @@ func (c *Client) Exists(ctx context.Context, path []string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("marshal exists request: %w", err)
 	}
-	_, err = c.post(ctx, "/retrieve", data)
+	respData, err := c.post(ctx, "/retrieve", data)
 	if err != nil {
-		// VyOS returns success=false when path doesn't exist
+		// Some VyOS versions return success=false when path doesn't exist.
 		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 0 {
 			return false, nil
 		}
 		return false, err
 	}
-	return true, nil
+	var exists bool
+	if err := json.Unmarshal(respData, &exists); err != nil {
+		return false, fmt.Errorf("unmarshal exists response: %w", err)
+	}
+	return exists, nil
 }

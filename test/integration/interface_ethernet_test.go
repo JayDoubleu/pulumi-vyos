@@ -39,7 +39,7 @@ func TestInterfaceEthernet_Description(t *testing.T) {
 	ctx := context.Background()
 
 	// Save the original description so we can restore it.
-	origDesc := readEthField(t, client, ctx, "eth0", "description")
+	origDesc := readEthField(ctx, t, client, "eth0", "description")
 	t.Cleanup(func() {
 		if origDesc == "" {
 			_ = client.Delete(ctx, []string{"interfaces", "ethernet", "eth0", "description"})
@@ -54,7 +54,7 @@ func TestInterfaceEthernet_Description(t *testing.T) {
 		t.Fatalf("Set description: %v", err)
 	}
 
-	got := readEthField(t, client, ctx, "eth0", "description")
+	got := readEthField(ctx, t, client, "eth0", "description")
 	if got != desc {
 		t.Fatalf("after set: description = %q, want %q", got, desc)
 	}
@@ -65,7 +65,7 @@ func TestInterfaceEthernet_Description(t *testing.T) {
 		t.Fatalf("Update description: %v", err)
 	}
 
-	got = readEthField(t, client, ctx, "eth0", "description")
+	got = readEthField(ctx, t, client, "eth0", "description")
 	if got != desc2 {
 		t.Fatalf("after update: description = %q, want %q", got, desc2)
 	}
@@ -75,7 +75,7 @@ func TestInterfaceEthernet_MTU(t *testing.T) {
 	client := vyosClient(t)
 	ctx := context.Background()
 
-	origMTU := readEthField(t, client, ctx, "eth0", "mtu")
+	origMTU := readEthField(ctx, t, client, "eth0", "mtu")
 	t.Cleanup(func() {
 		if origMTU == "" {
 			_ = client.Delete(ctx, []string{"interfaces", "ethernet", "eth0", "mtu"})
@@ -90,7 +90,7 @@ func TestInterfaceEthernet_MTU(t *testing.T) {
 		t.Fatalf("Set mtu: %v", err)
 	}
 
-	got := readEthField(t, client, ctx, "eth0", "mtu")
+	got := readEthField(ctx, t, client, "eth0", "mtu")
 	if got != mtu {
 		t.Fatalf("after set: mtu = %q, want %q", got, mtu)
 	}
@@ -142,7 +142,7 @@ func TestInterfaceEthernet_AddStaticAddress(t *testing.T) {
 
 // readEthField reads a single string field from eth0 config.
 // Returns empty string if the field is absent.
-func readEthField(t *testing.T, client *vyosclient.Client, ctx context.Context, iface, field string) string {
+func readEthField(ctx context.Context, t *testing.T, client *vyosclient.Client, iface, field string) string {
 	t.Helper()
 
 	data, err := client.ShowConfig(ctx, []string{"interfaces", "ethernet", iface})
