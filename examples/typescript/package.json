@@ -1,0 +1,11 @@
+{
+    "name": "vyos-typescript-example",
+    "devDependencies": {
+        "@types/node": "^18",
+        "typescript": "^5"
+    },
+    "dependencies": {
+        "@jaydoubleu/vyos": "0.1.0-alpha.1",
+        "@pulumi/pulumi": "^3.0.0"
+    }
+}

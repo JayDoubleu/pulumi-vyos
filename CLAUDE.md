@@ -149,8 +149,3 @@ regex syntax (lookahead/lookbehind) is skipped at codegen time. Named validators
 - **Integration tests**: `make test_integration` (needs VyOS VM)
 - **VyOS VM**: `test/vm/run.sh start` (QEMU with cloud-init, API on port 8443)
 - Env vars for integration tests: `VYOS_HOST` (default: localhost), `VYOS_API_PORT` (default: 8443), `VYOS_API_KEY` (default: integration-test-key)
-
-## Git Identity
-
-- `user.name="Jay W"`
-- `user.email="git.jaydoubleu@gmail.com"`

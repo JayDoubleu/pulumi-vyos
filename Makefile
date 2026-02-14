@@ -1,6 +1,6 @@
 PROJECT_NAME := vyos
 PROVIDER     := pulumi-resource-$(PROJECT_NAME)
-VERSION      ?= 0.0.1-dev
+VERSION      ?= 0.1.0-alpha.1
 GOMODULE     := github.com/jaydoubleu/pulumi-vyos
 PULUMI       := $(HOME)/.pulumi/bin/pulumi
 

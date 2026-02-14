@@ -1,17 +1,34 @@
 # pulumi-vyos
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+> **Alpha**: This provider is under active development. APIs may change
+> between releases. Please report issues on GitHub.
+
 A native Pulumi provider for managing VyOS network appliance configuration.
 
 Unlike Terraform bridge providers, pulumi-vyos talks directly to the VyOS HTTP
 API. Resources are code-generated from the VyOS XML interface definitions,
-covering the full configuration surface with over 560 resource types.
+covering the full configuration surface with over 612 resource types.
 
 ## Installation
 
-Python (local development):
+### Python
 
 ```bash
-pip install ./sdk/python
+pip install pulumi-vyos==0.1.0a1
+```
+
+### TypeScript / JavaScript
+
+```bash
+npm install @jaydoubleu/vyos@0.1.0-alpha.1
+```
+
+### Go
+
+```go
+import "github.com/jaydoubleu/pulumi-vyos/sdk/go/vyos"
 ```
 
 ## Configuration
@@ -89,11 +106,11 @@ save = vyos.ConfigFileSave("save-config",
 pulumi.export("hostname", hostname.host_name)
 ```
 
-See [`examples/python/`](examples/python/) for the full runnable example.
+See [`examples/`](examples/) for runnable examples in Python, TypeScript, Go, and YAML.
 
 ## Available Resources
 
-The provider generates over 560 resources from VyOS XML interface definitions,
+The provider generates over 612 resources from VyOS XML interface definitions,
 covering interfaces, firewall, NAT, routing protocols, system settings, services,
 VPN, and more. Every resource supports full CRUD operations and state refresh.
 
@@ -102,13 +119,33 @@ Resource names follow the VyOS config hierarchy. For example:
 - `vyos.FirewallIPv4NameRule` for `firewall ipv4 name <name> rule <n>`
 - `vyos.ServiceDHCPServerSharedNetworkNameSubnet` for DHCP subnets
 
+## Status
+
+### What works
+
+- Full CRUD for all 612 generated resources
+- Client-side validation (regex and numeric range constraints)
+- Component resources: `StaticRouteComplete`, `FirewallIPv4Ruleset`
+- Config file save (automatic and explicit)
+- Python, TypeScript, and Go SDKs
+
+### Known limitations
+
+- Named validators (ipv4-address, mac-address, etc.) are not yet implemented
+- No `pulumi import` support yet
+- VyOS API requires serial access (provider uses a mutex)
+- Only tested against VyOS 1.4 (sagitta) rolling builds
+
 ## Development
 
-See [CLAUDE.md](CLAUDE.md) for build instructions and project structure, and
-[DESIGN.md](DESIGN.md) for architecture decisions and development plan.
+See [DESIGN.md](DESIGN.md) for architecture decisions and the development plan.
 
 ```bash
 make build    # generate + compile + schema + SDKs
 make test     # run unit tests
 make lint     # run golangci-lint
 ```
+
+## License
+
+Apache 2.0. See [LICENSE](LICENSE).

@@ -10,6 +10,7 @@ linters:
     - misspell
     - revive
   exclusions:
+    generated: lax
     paths:
       - sdk
       - examples
@@ -23,6 +24,7 @@ formatters:
   enable:
     - gofumpt
   exclusions:
+    generated: lax
     paths:
       - sdk
       - examples

@@ -1,0 +1,3 @@
+name: vyos-typescript-example
+runtime: nodejs
+description: VyOS provider example using TypeScript

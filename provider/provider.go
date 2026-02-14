@@ -10,7 +10,7 @@ import (
 )
 
 // Version is set at build time via ldflags.
-var Version string
+var Version = "0.0.0-dev"
 
 // Name is the Pulumi package name for this provider.
 const Name = "vyos"
@@ -27,6 +27,14 @@ func Provider() p.Provider {
 			infer.ComponentF(NewStaticRouteComplete),
 			infer.ComponentF(NewFirewallIPv4Ruleset),
 		).
+		WithLanguageMap(map[string]any{
+			"nodejs": map[string]any{
+				"packageName": "@jaydoubleu/vyos",
+			},
+		}).
+		WithPublisher("jaydoubleu").
+		WithRepository("https://github.com/jaydoubleu/pulumi-vyos").
+		WithHomepage("https://github.com/jaydoubleu/pulumi-vyos").
 		WithModuleMap(map[tokens.ModuleName]tokens.ModuleName{
 			"provider": "index",
 		}).
