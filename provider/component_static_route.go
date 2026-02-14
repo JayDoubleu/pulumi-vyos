@@ -123,5 +123,12 @@ func NewStaticRouteComplete(
 	comp.Prefix = pulumi.String(args.Prefix).ToStringOutput()
 	comp.NextHops = nhAddresses.ToStringArrayOutput()
 
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
+		"prefix":   comp.Prefix,
+		"nextHops": comp.NextHops,
+	}); err != nil {
+		return nil, err
+	}
+
 	return comp, nil
 }

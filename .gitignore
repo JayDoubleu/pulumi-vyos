@@ -37,3 +37,10 @@ provider/resource_gen_*.go
 # Python
 __pycache__/
 *.pyc
+
+# Secrets / credentials
+.env
+.env.*
+*.pem
+*.key
+*.cert

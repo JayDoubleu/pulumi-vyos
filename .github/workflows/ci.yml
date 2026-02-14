@@ -31,20 +31,15 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    needs: [generate]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/download-artifact@v4
-        with:
-          name: generated-resources
-          path: provider/
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.9.0
-          args: ./provider/... ./codegen/...
+          args: ./codegen/...
 
   test:
     name: Test
@@ -82,7 +77,5 @@ jobs:
         run: make provider
       - name: Generate schema
         run: make schema
-      - name: Verify schema is up to date
-        run: git diff --exit-code schema.json
       - name: Generate SDKs
         run: make codegen

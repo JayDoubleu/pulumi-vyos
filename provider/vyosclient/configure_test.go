@@ -3,18 +3,22 @@ package vyosclient
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 	"testing"
 )
 
 func TestSet(t *testing.T) {
 	t.Parallel()
 
+	var mu sync.Mutex
 	var receivedData string
 	srv := newTestServer(t, func(endpoint, data string) (int, apiResponse) {
 		if endpoint != "/configure" {
 			t.Errorf("endpoint = %q, want /configure", endpoint)
 		}
+		mu.Lock()
 		receivedData = data
+		mu.Unlock()
 		return http.StatusOK, successResponse("ok")
 	})
 	defer srv.Close()
@@ -25,8 +29,12 @@ func TestSet(t *testing.T) {
 		t.Fatalf("Set() error: %v", err)
 	}
 
+	mu.Lock()
+	data := receivedData
+	mu.Unlock()
+
 	var op Operation
-	if err := json.Unmarshal([]byte(receivedData), &op); err != nil {
+	if err := json.Unmarshal([]byte(data), &op); err != nil {
 		t.Fatalf("unmarshal sent data: %v", err)
 	}
 	if op.Op != "set" {
@@ -40,12 +48,15 @@ func TestSet(t *testing.T) {
 func TestDelete(t *testing.T) {
 	t.Parallel()
 
+	var mu sync.Mutex
 	var receivedData string
 	srv := newTestServer(t, func(endpoint, data string) (int, apiResponse) {
 		if endpoint != "/configure" {
 			t.Errorf("endpoint = %q, want /configure", endpoint)
 		}
+		mu.Lock()
 		receivedData = data
+		mu.Unlock()
 		return http.StatusOK, successResponse("ok")
 	})
 	defer srv.Close()
@@ -56,8 +67,12 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("Delete() error: %v", err)
 	}
 
+	mu.Lock()
+	data := receivedData
+	mu.Unlock()
+
 	var op Operation
-	if err := json.Unmarshal([]byte(receivedData), &op); err != nil {
+	if err := json.Unmarshal([]byte(data), &op); err != nil {
 		t.Fatalf("unmarshal sent data: %v", err)
 	}
 	if op.Op != "delete" {
@@ -68,12 +83,15 @@ func TestDelete(t *testing.T) {
 func TestBatchConfigure(t *testing.T) {
 	t.Parallel()
 
+	var mu sync.Mutex
 	var receivedData string
 	srv := newTestServer(t, func(endpoint, data string) (int, apiResponse) {
 		if endpoint != "/configure" {
 			t.Errorf("endpoint = %q, want /configure", endpoint)
 		}
+		mu.Lock()
 		receivedData = data
+		mu.Unlock()
 		return http.StatusOK, successResponse("ok")
 	})
 	defer srv.Close()
@@ -89,8 +107,12 @@ func TestBatchConfigure(t *testing.T) {
 		t.Fatalf("BatchConfigure() error: %v", err)
 	}
 
+	mu.Lock()
+	data := receivedData
+	mu.Unlock()
+
 	var received []Operation
-	if err := json.Unmarshal([]byte(receivedData), &received); err != nil {
+	if err := json.Unmarshal([]byte(data), &received); err != nil {
 		t.Fatalf("unmarshal sent data: %v", err)
 	}
 	if len(received) != 3 {

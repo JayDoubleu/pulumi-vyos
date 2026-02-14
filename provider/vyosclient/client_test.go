@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // newTestServer creates an httptest.Server that simulates VyOS API responses.
@@ -103,7 +104,9 @@ func TestMutexSerialization(t *testing.T) {
 				break
 			}
 		}
-		// Simulate some work
+		// Hold the request long enough for concurrent goroutines to overlap
+		// if the mutex were absent.
+		time.Sleep(time.Millisecond)
 		concurrent.Add(-1)
 		return http.StatusOK, successResponse("ok")
 	})

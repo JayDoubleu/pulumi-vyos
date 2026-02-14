@@ -158,5 +158,12 @@ func NewFirewallIPv4Ruleset(
 	comp.Name = pulumi.String(args.Name).ToStringOutput()
 	comp.RuleCount = pulumi.Int(len(args.Rules)).ToIntOutput()
 
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
+		"name":      comp.Name,
+		"ruleCount": comp.RuleCount,
+	}); err != nil {
+		return nil, err
+	}
+
 	return comp, nil
 }

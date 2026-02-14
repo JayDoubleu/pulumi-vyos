@@ -1,4 +1,6 @@
 version: "2"
+run:
+  timeout: 10m
 linters:
   enable:
     - errcheck
@@ -10,10 +12,11 @@ linters:
     - misspell
     - revive
   exclusions:
-    generated: lax
+    generated: strict
     paths:
       - sdk
       - examples
+      - "provider/resource_gen_.*\\.go"
   settings:
     revive:
       rules:
@@ -24,7 +27,8 @@ formatters:
   enable:
     - gofumpt
   exclusions:
-    generated: lax
+    generated: strict
     paths:
       - sdk
       - examples
+      - "provider/resource_gen_.*\\.go"
