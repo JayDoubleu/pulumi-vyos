@@ -14,16 +14,29 @@ With the current `codegen/vyos-1x` submodule snapshot, `make generate` emits
 
 ## Installation
 
+SDKs are not yet published to package registries. Build from source:
+
+```bash
+git clone https://github.com/jaydoubleu/pulumi-vyos.git
+cd pulumi-vyos
+git submodule update --init
+make build
+```
+
+This generates the provider binary and SDKs for Python, TypeScript, and Go
+in the `sdk/` directory. To use a generated SDK in your project, install it
+from the local path:
+
 ### Python
 
 ```bash
-pip install pulumi-vyos==0.1.0a1
+pip install ./sdk/python
 ```
 
 ### TypeScript / JavaScript
 
 ```bash
-npm install @jaydoubleu/vyos@0.1.0-alpha.1
+npm install ./sdk/nodejs
 ```
 
 ### Go
